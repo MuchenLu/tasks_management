@@ -1,5 +1,5 @@
 # UI
-from PyQt6 import QtWidgets, QtGui, QtCore
+from PyQt6 import QtWidgets, QtGui, QtCore, QtWebEngineWidgets, QtWebEngineCore
 import sys
 # Google Calendar API
 from PyQt6 import QtWidgets
@@ -14,6 +14,8 @@ import datetime
 import random
 # graph
 import plotly
+# multithreading
+import threading
 # backend
 import backend
 
@@ -33,11 +35,13 @@ FONT = QtGui.QFontDatabase.applicationFontFamilies(QtGui.QFontDatabase.addApplic
 FONTS = {"h1": QtGui.QFont(FONT, 24, QtGui.QFont.Weight.Bold),
          "h2": QtGui.QFont(FONT, 16),
          "content": QtGui.QFont(FONT, 12),
-         "remark": QtGui.QFont(FONT, 8)}
+         "remark": QtGui.QFont(FONT, 8),
+         "menu": QtGui.QFont(FONT, 16),
+         "highlight": QtGui.QFont(FONT, 18, QtGui.QFont.Weight.Bold)}
 
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
-CREDENTIALS_FILE = "./credentials.json"
-TOKEN_FILE = "./token.json"
+CREDENTIALS_FILE = "credentials.json"
+TOKEN_FILE = "token.json"
 
 try:
     credentials = None
@@ -80,7 +84,9 @@ class Basic(QtWidgets.QMainWindow) :
         self.side = Side(self)
         self.main = Main(self)
         self.add = Add(self)
+        self.circularLoadingWidget = CircularLoadingWidget()
 
+        self.circularLoadingWidget.show()
         self.top.show()
         self.side.show()
         self.main.show()
@@ -90,6 +96,11 @@ class Basic(QtWidgets.QMainWindow) :
         self.height = self.size().height()
 
         super().resizeEvent(event)
+    
+    def showEvent(self, event):
+        super().showEvent(event)
+        if hasattr(self, 'circularLoadingWidget') and self.circularLoadingWidget:
+            self.circularLoadingWidget.close()
 
 class Top(QtWidgets.QFrame) :
     def __init__(self, parent):
@@ -121,23 +132,106 @@ class Top(QtWidgets.QFrame) :
         self.home_text.setFont(FONTS["h1"])
         self.home_layout.addWidget(self.home_text)
         self.home_frame.move(self.home_frame_x, self.home_frame_y)
+        self.home_frame.mousePressEvent = lambda event: self.back_home(event)
         self.home_frame.show()
 
     def back_home(self, event) :
         global page
         page = "Home"
+        self.parent.side.initialize(event)
+        self.parent.main.home()
 
-class Side(QtWidgets.QFrame) :
+class Side(QtWidgets.QScrollArea) :
     def __init__(self, parent):
         super().__init__(parent)
+        # region: basic settings
+        self.setWidgetResizable(True)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
 
         self.parent = parent
         self.x = 0
         self.y = int(self.parent.height * 0.08)
-        self.width = int(self.parent.width * 0.15)
-        self.height = int(self.parent.height * 0.92)
-        self.setGeometry(self.x, self.y, self.width, self.height)
-        self.setStyleSheet(f"background: {COLORS['side_color']}")
+        self._width = int(self.parent.width * 0.15)
+        self._height = int(self.parent.height * 0.92)
+        self.setMinimumHeight(self._height)
+        self.setMinimumWidth(self._width)
+        self.move(self.x, self.y)
+        self.setStyleSheet(f'''QScrollBar:vertical {{
+                            width: 0px;
+                            background: {COLORS["white"]};  /* 背景顏色 */
+                            margin: 0px 0px 0px 0px;
+                        }}
+                        
+                        QScrollBar::handle:vertical {{
+                            background: {COLORS['line_color']};  /* 滑塊顏色 */
+                            min-height: 20px;  /* 最小高度 */
+                            border-radius: 50;  /* 圓角 */
+                        }}
+                        
+                        QScrollBar::handle:vertical:hover {{
+                            background: rgba(0, 0, 0, 0.3);  /* 懸停時顏色 */
+                        }}
+                        
+                        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                            height: 0px;  /* 隱藏箭頭 */
+                        }}''')
+        
+        self.frame = QtWidgets.QFrame()
+        self.frame.setStyleSheet(f'''background: {COLORS['side_color']}''')
+        # 修改：添加主布局管理器
+        self.main_layout = QtWidgets.QVBoxLayout(self.frame)
+        self.main_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop)
+        self.main_layout.setContentsMargins(20, 20, 0, 0)
+        self.main_layout.setSpacing(20)
+        
+        self.setWidget(self.frame)
+        self.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        # endregion
+        
+        # region: menu
+        self.graph = QtWidgets.QLabel(self, text = "儀表板")
+        self.graph.setStyleSheet(f"color: {COLORS['white']}")
+        self.graph.setFont(FONTS["menu"])
+        self.graph.mousePressEvent = lambda event: self.handle_mouseEvent(event, self.graph)
+        self.main_layout.addWidget(self.graph)
+
+        self.calendar = QtWidgets.QLabel(self, text = "日曆")
+        self.calendar.setStyleSheet(f"color: {COLORS['white']}")
+        self.calendar.setFont(FONTS['menu'])
+        self.calendar.mousePressEvent = lambda event: self.handle_mouseEvent(event, self.calendar)
+        self.main_layout.addWidget(self.calendar)
+
+        self.all = QtWidgets.QLabel(self, text = "全部任務")
+        self.all.setStyleSheet(f"color: {COLORS['white']}")
+        self.all.setFont(FONTS["menu"])
+        self.all.mousePressEvent = lambda event: self.handle_mouseEvent(event, self.all)
+        self.main_layout.addWidget(self.all)
+
+        self.menu_dict = {}
+        for project in list(tasks.keys()) :
+            menu = QtWidgets.QLabel(self, text = project.replace('"', ""))
+            menu.setStyleSheet(f"color: {COLORS['white']}")
+            menu.setFont(FONTS["menu"])
+            menu.mousePressEvent = lambda event: self.handle_mouseEvent(event, menu)
+            self.main_layout.addWidget(menu)
+
+    def initialize(self, event) :
+        for i in range(self.main_layout.count()) :
+            widget = self.main_layout.itemAt(i).widget()
+            if widget :
+                widget.setFont(FONTS["menu"])
+
+    def switch_page(self, event, label: QtWidgets.QLabel) :
+        global page
+        page = label.text()
+        label.setFont(FONTS["highlight"])
+
+        if page == "日曆" :
+            self.parent.main.calendar()
+
+    def handle_mouseEvent(self, event, label) :
+        self.initialize(event)
+        self.switch_page(event, label)
 
 class Main(QtWidgets.QScrollArea):
     def __init__(self, parent):
@@ -158,7 +252,7 @@ class Main(QtWidgets.QScrollArea):
         self.setMinimumWidth(self._width)  # 修改：使用最小寬度而非固定寬度
         self.move(self.x, self.y)
         self.setStyleSheet(f'''QScrollBar:vertical {{
-                            width: 10px;
+                            width: 0px;
                             background: {COLORS["white"]};  /* 背景顏色 */
                             margin: 0px 0px 0px 0px;
                         }}
@@ -243,33 +337,32 @@ class Main(QtWidgets.QScrollArea):
         self.to_do_layout.addWidget(self.to_do_task_frame)
         self.to_do_layout.setContentsMargins(0, 20, 0, 20)
 
-        for task in tasks:
-            if task != None:
-                task_frame = QtWidgets.QFrame(self.to_do_task_frame)
-                task_frame.setObjectName("custom-task-frame")
-                task_frame.setStyleSheet(f'''#custom-task-frame {{
-                                        border: none;
-                                        border-bottom: 2px solid {COLORS['line_color']};
-                                        }}''')
-                task_layout = QtWidgets.QVBoxLayout(task_frame)
-                task_layout.setContentsMargins(0, 0, 0, 0)
-                
-                task_name = QtWidgets.QLabel(task_frame, text=task)
-                task_name.setFont(FONTS["content"])
-                task_layout.addWidget(task_name)
+        for project in list(tasks.keys()):
+            for task in list(tasks[project].keys()) :
+                if task != None:
+                    task_frame = QtWidgets.QFrame(self.to_do_task_frame)
+                    task_frame.setObjectName("custom-task-frame")
+                    task_frame.setStyleSheet(f'''#custom-task-frame {{
+                                            border: none;
+                                            border-bottom: 2px solid {COLORS['line_color']};
+                                            }}''')
+                    task_layout = QtWidgets.QVBoxLayout(task_frame)
+                    task_layout.setContentsMargins(0, 0, 0, 0)
+                    
+                    task_name = QtWidgets.QLabel(task_frame, text=task)
+                    task_name.setFont(FONTS["content"])
+                    task_layout.addWidget(task_name)
 
-                task_status = QtWidgets.QLabel(task_frame, text="今日預計完成")
-                task_status.setStyleSheet(f"color: {COLORS['remark_color']}")
-                task_status.setFont(FONTS["remark"])
-                task_layout.addWidget(task_status)
+                    task_status = QtWidgets.QLabel(task_frame, text="今日預計完成")
+                    task_status.setStyleSheet(f"color: {COLORS['remark_color']}")
+                    task_status.setFont(FONTS["remark"])
+                    task_layout.addWidget(task_status)
 
-                task_layout.addSpacing(5)
+                    task_layout.addSpacing(5)
 
-                self.to_do_task_layout.addWidget(task_frame)
+                    self.to_do_task_layout.addWidget(task_frame)
 
-        # 修改：設置最小高度而非固定高度
         self.to_do_frame.setMinimumHeight(self.to_do_frame.sizeHint().height())
-        # 修改：將框架添加到主布局
         self.main_layout.addWidget(self.to_do_frame)
         # endregion
 
@@ -341,6 +434,37 @@ class Main(QtWidgets.QScrollArea):
         self.main_layout.addWidget(self.calendar_frame)
         # endregion
 
+        # region: graph page
+        self.total_graph_frame = QtWidgets.QFrame()
+        self.total_graph_frame.setObjectName("total_graph_area")
+        self.total_graph_frame.setStyleSheet(f'''#total_graph_area{{
+                                            border: none;
+                                            border-bottom: 2px solid {COLORS["line_color"]};
+        }}''')
+        self.total_graph_layout = QtWidgets.QVBoxLayout(self.total_graph_frame)
+        self.total_graph_layout.setContentsMargins(0, 20, 0, 20)
+        # endregion
+
+        # region: calendar page
+        profile_path = os.path.dirname(os.path.abspath(__file__))
+        profile_path = os.path.join(profile_path, "Calendar_Profile") # 指定並創建目錄
+        os.makedirs(profile_path, exist_ok=True) # 確保目錄存在
+        if profile_path :
+            self.profile = QtWebEngineCore.QWebEngineProfile("PersistentCalendarProfile", self)
+            self.profile.setPersistentStoragePath(profile_path)
+            self.profile.setPersistentCookiesPolicy(QtWebEngineCore.QWebEngineProfile.PersistentCookiesPolicy.AllowPersistentCookies)
+            self.profile.setCachePath(profile_path) # 通常快取也放一起
+            self.profile.setHttpCacheType(QtWebEngineCore.QWebEngineProfile.HttpCacheType.DiskHttpCache)
+        else :
+            self.profile = QtWebEngineCore.QWebEngineProfile(self) # 使用預設 Profile
+        self.calendar_page = QtWebEngineWidgets.QWebEngineView()
+        self.page = QtWebEngineCore.QWebEnginePage(self.profile, self)
+        self.calendar_page.setPage(self.page)
+        self.calendar_page.setUrl(QtCore.QUrl("https://calendar.google.com"))
+        self.main_layout.addWidget(self.calendar_page)
+        self.calendar_page.setFixedSize(self._width, self._height)
+        # endregion
+
         self.main_layout.addStretch(1)
 
         self.home()
@@ -350,19 +474,69 @@ class Main(QtWidgets.QScrollArea):
         self.to_do_frame.hide()
         self.graph_frame.hide()
         self.calendar_frame.hide()
+        self.calendar_page.setVisible(False)
 
     def home(self):
+        self.initialize()
         self.greet_frame.show()
         self.to_do_frame.show()
         self.graph_frame.show()
         self.calendar_frame.show()
 
     def graph(self) :
-        print("graph")
+        self.initialize()
+
+    def calendar(self) :
+        self.initialize()
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.calendar_page.setVisible(True)
 
 class Add(QtWidgets.QFrame) :
     def __init__(self, parent):
         super().__init__(parent)
+
+class CircularLoadingWidget(QtWidgets.QWidget):
+    def __init__(self):
+        super().__init__()
+        # 設定基本屬性
+        self.setFixedSize(200, 200)
+        self.angle = 0
+        
+        # 建立計時器
+        self.timer = QtCore.QTimer(self)
+        self.timer.timeout.connect(self.update_loading)
+        self.timer.start(30)  # 每30ms更新一次
+
+        self.show()
+    
+    def paintEvent(self, event):
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        
+        # 建立漸層顏色
+        gradient = QtGui.QLinearGradient(0, 0, 200, 200)
+        gradient.setColorAt(0, QtGui.QColor(50, 150, 255))
+        gradient.setColorAt(1, QtGui.QColor(100, 200, 255))
+        
+        # 設定畫筆
+        pen = QtGui.QPen(gradient, 15)
+        pen.setCapStyle(QtCore.Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        
+        # 繪製環形
+        painter.drawArc(
+            25, 25, 150, 150,  # 調整位置和大小
+            self.angle * 16,   # 起始角度
+            120 * 16           # 弧長
+        )
+    
+    def update_loading(self):
+        self.angle = (self.angle + 5) % 360
+        self.update()
+
+def wait() :
+    circularLoadingWidget = CircularLoadingWidget()
+    circularLoadingWidget.show()
 
 if __name__ == "__main__" :
     basic = Basic()

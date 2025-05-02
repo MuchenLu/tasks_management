@@ -2,3 +2,7 @@ __pycache__/
 .env/
 
 *.json
+
+test.py
+
+Calendar_Profile
