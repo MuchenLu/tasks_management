@@ -30,7 +30,8 @@ COLORS = {"top_color": "#007acc",
           "line_color": "rgba(0, 0, 0, 0.1)",
           "remark_color": "rgba(0, 0, 0, 0.5)",
           "white": "#ffffff",
-          "green": "#00796b"}
+          "green": "#00796b",
+          "shadow": "0, 0, 0, 25"}
 FONT = QtGui.QFontDatabase.applicationFontFamilies(QtGui.QFontDatabase.addApplicationFont("./GenSenRounded2TW-R.otf"))[0]
 FONTS = {"h1": QtGui.QFont(FONT, 24, QtGui.QFont.Weight.Bold),
          "h2": QtGui.QFont(FONT, 16),
@@ -77,8 +78,8 @@ class Basic(QtWidgets.QMainWindow) :
         self.setWindowTitle("任務管理系統")
         self.setWindowIcon(QtGui.QIcon("./icon.ico"))
 
-        self.width = QtWidgets.QApplication.primaryScreen().geometry().width()
-        self.height = QtWidgets.QApplication.primaryScreen().geometry().height()
+        self._width = QtWidgets.QApplication.primaryScreen().geometry().width()
+        self._height = QtWidgets.QApplication.primaryScreen().geometry().height()
 
         self.top = Top(self)
         self.side = Side(self)
@@ -92,8 +93,8 @@ class Basic(QtWidgets.QMainWindow) :
         self.main.show()
 
     def resizeEvent(self, event):
-        self.width = self.size().width()
-        self.height = self.size().height()
+        self._width = self.size().width()
+        self._height = self.size().height()
 
         super().resizeEvent(event)
     
@@ -109,21 +110,21 @@ class Top(QtWidgets.QFrame) :
         self.parent = parent
         self.x = 0
         self.y = 0
-        self.width = self.parent.width
-        self.height = int(self.parent.height * 0.08)
-        self.setGeometry(self.x, self.y, self.width, self.height)
+        self._width = self.parent._width
+        self._height = int(self.parent._height * 0.08)
+        self.setGeometry(self.x, self.y, self._width, self._height)
         self.setStyleSheet(f"background: {COLORS['top_color']}")
 
         self.home_frame = QtWidgets.QFrame(self)
         self.home_layout = QtWidgets.QHBoxLayout(self.home_frame)
-        self.home_frame_x = int(self.width * 0.001)
+        self.home_frame_x = int(self._width * 0.001)
         self.home_frame_y = 0
         self.home_frame.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
         self.home_frame.mousePressEvent = lambda event: self.back_home(event)
 
         self.home_icon = QtWidgets.QLabel(self.home_frame)
         icon = QtGui.QPixmap("./icon.png")
-        icon = icon.scaled(int(self.width * 0.04), int(self.width * 0.04), QtCore.Qt.AspectRatioMode.KeepAspectRatio, QtCore.Qt.TransformationMode.SmoothTransformation)
+        icon = icon.scaled(int(self._width * 0.04), int(self._width * 0.04), QtCore.Qt.AspectRatioMode.KeepAspectRatio, QtCore.Qt.TransformationMode.SmoothTransformation)
         self.home_icon.setPixmap(icon)
         self.home_layout.addWidget(self.home_icon)
 
@@ -150,9 +151,9 @@ class Side(QtWidgets.QScrollArea) :
 
         self.parent = parent
         self.x = 0
-        self.y = int(self.parent.height * 0.08)
-        self._width = int(self.parent.width * 0.15)
-        self._height = int(self.parent.height * 0.92)
+        self.y = int(self.parent._height * 0.08)
+        self._width = int(self.parent._width * 0.15)
+        self._height = int(self.parent._height * 0.92)
         self.setMinimumHeight(self._height)
         self.setMinimumWidth(self._width)
         self.move(self.x, self.y)
@@ -228,6 +229,10 @@ class Side(QtWidgets.QScrollArea) :
 
         if page == "日曆" :
             self.parent.main.calendar()
+        elif page == "儀表板" :
+            self.parent.main.graph()
+        else :
+            self.parent.main.task()
 
     def handle_mouseEvent(self, event, label) :
         self.initialize(event)
@@ -236,16 +241,17 @@ class Side(QtWidgets.QScrollArea) :
 class Main(QtWidgets.QScrollArea):
     def __init__(self, parent):
         super().__init__(parent)
+        global page
         # region: main area
         self.setWidgetResizable(True)
         # 修改：使用更靈活的大小策略
         self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
 
         self.parent = parent
-        self.x = int(self.parent.width * 0.15)
-        self.y = int(self.parent.height * 0.08)
-        self._width = int(self.parent.width * 0.85)
-        self._height = int(self.parent.height * 0.92)
+        self.x = int(self.parent._width * 0.15)
+        self.y = int(self.parent._height * 0.08)
+        self._width = int(self.parent._width * 0.85)
+        self._height = int(self.parent._height * 0.92)
         
         # 修改：僅設置最小高度而非固定高度
         self.setMinimumHeight(self._height)
@@ -465,6 +471,30 @@ class Main(QtWidgets.QScrollArea):
         self.calendar_page.setFixedSize(self._width, self._height)
         # endregion
 
+        # region: task page
+        self.task_page = QtWidgets.QFrame()
+        self.task_page.setStyleSheet(f"background: {COLORS['main_color']}")
+        self.task_layout = QtWidgets.QGridLayout(self.task_page)
+        self.task_layout.setContentsMargins(10, 20, 10, 20)\
+        
+        self.project_title = QtWidgets.QLabel(text = page)
+        self.project_title.setFont(FONTS["h1"])
+        self.project_title.setStyleSheet(f'''color: {COLORS["green"]}''')
+        self.task_layout.addWidget(self.project_title, 0, 0, 1, 2)
+
+        self.add_task_button = QtWidgets.QPushButton(text = "新增")
+        self.add_task_button.setFont(FONTS["h2"])
+        self.add_task_button.setStyleSheet(f'''background: {COLORS["button_color"]};
+                                           color: {COLORS["white"]};''')
+        self.add_task_button.setFixedWidth(self.add_task_button.sizeHint().width())
+        self.add_task_button.clicked.connect(lambda: self.parent.add.add_task)
+        self.task_layout.addWidget(self.add_task_button, 0, 2)
+
+        self.grid = 1
+        self.column = 0
+
+        self.main_layout.addWidget(self.task_page)
+
         self.main_layout.addStretch(1)
 
         self.home()
@@ -475,6 +505,7 @@ class Main(QtWidgets.QScrollArea):
         self.graph_frame.hide()
         self.calendar_frame.hide()
         self.calendar_page.setVisible(False)
+        self.task_page.hide()
 
     def home(self):
         self.initialize()
@@ -490,10 +521,89 @@ class Main(QtWidgets.QScrollArea):
         self.initialize()
         self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.calendar_page.setVisible(True)
+    
+    def task(self) :
+        self.initialize()
+        self.project_title.setText(page)
+        self.grid = 1
+        self.column = 0
+        if page == "全部任務" :
+            for project in list(tasks.keys()) :
+                for task in list(tasks[project].keys()) :
+                    task_frame = QtWidgets.QFrame()
+                    task_frame.setStyleSheet(f'''background: {COLORS["white"]};
+                                             border-radius: 5''')
+                    shadow = QtWidgets.QGraphicsDropShadowEffect()
+                    shadow.setBlurRadius(4)
+                    shadow.setColor(QtGui.QColor(COLORS["shadow"]))
+                    shadow.setOffset(2, 2)
+                    task_frame.setGraphicsEffect(shadow)
+                    task_layout = QtWidgets.QGridLayout(task_frame)
+                    task_title = QtWidgets.QLabel(f'{project}: {task}')
+                    task_title.setFont(FONTS["content"])
+                    task_layout.addWidget(task_title, 0, 0)
+                    self.task_layout.addWidget(task_frame, self.grid, self.column)
+                    if self.column == 2 :
+                        self.row += 1
+                        self.column = 0
+                    else :
+                        self.column += 1
+
+        self.task_page.show()
 
 class Add(QtWidgets.QFrame) :
     def __init__(self, parent):
         super().__init__(parent)
+
+        self.parent = parent
+        self._width = self.parent._width
+        self._height = int(self.parent._height * 0.92)
+        self._x = 0
+        self._y = int(self.parent._height * 0.08)
+        self.setGeometry(self._x, self._y, self._width, self._height)
+        self.setStyleSheet(f"background: {COLORS['main_color']}")
+
+        # region: add_project
+        # endregion
+
+        # region: add task
+        self.add_task_frame = QtWidgets.QFrame()
+        self.add_task_frame.setStyleSheet(f'''background: {COLORS["main_color"]}''')
+        self.add_task_layout = QtWidgets.QGridLayout(self.add_task_frame)
+        self.add_task_title = QtWidgets.QLabel(text = "新增任務")
+        self.add_task_title.setFont(FONTS["h1"])
+        self.add_task_title.setStyleSheet(f"color: {COLORS['green']}")
+        self.add_task_title.move(int((self.add_task_frame.width() / 2) - (self.add_task_title.width() / 2)), int((self.add_task_frame.height() / 2) - (self.add_task_title.width() / 2)))
+        
+        self.task_name_line = QtWidgets.QLabel(text = "任務名稱")
+        self.task_name_line.setFont(FONTS['h2'])
+        self.task_name_line.setStyleSheet(f"color: {COLORS['green']}")
+        self.add_task_layout.addWidget(self.task_name_line, 0, 3)
+
+        self.task_name_input = QtWidgets.QLineEdit()
+        self.task_name_input.setFont(FONTS["content"])
+        self.task_name_input.setStyleSheet(f'''color: {COLORS["green"]};
+                                           background: {COLORS["white"]};
+                                           border-radius: 10;
+                                           border: 1px solid black''')
+        self.add_task_layout.addWidget(self.task_name_input, 1, 0, 0, 3)
+
+        self.task_belong_project_line = QtWidgets.QLabel(text = "所屬專案")
+        self.task_belong_project_line.setFont(FONTS["h2"])
+        self.task_belong_project_line.setStyleSheet(f"color: {COLORS['green']}")
+        self.add_task_layout.addWidget(self.task_belong_project_line)
+        # endregion
+
+        self.hide()
+    
+    def initialize(self) :
+        self.hide()
+        self.add_task_frame.hide()
+
+    def add_task(self) :
+        self.initialize()
+        self.show()
+        self.add_task_frame.show()
 
 class CircularLoadingWidget(QtWidgets.QWidget):
     def __init__(self):
