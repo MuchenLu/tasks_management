@@ -27,6 +27,7 @@ COLORS = {"top_color": "#007acc",
           "main_color": "#e0f2f1",
           "header_color": "#01a1ff",
           "button_color": "#007acc",
+          "red_button_color": "#D32f2f",
           "line_color": "rgba(0, 0, 0, 0.1)",
           "remark_color": "rgba(0, 0, 0, 0.5)",
           "white": "#ffffff",
@@ -59,6 +60,7 @@ try:
         with open(TOKEN_FILE, 'w') as token:
             token.write(credentials.to_json())
 
+    credentials.refresh(Request())
     # 建立 Calendar 服務
     service = build('calendar', 'v3', credentials=credentials)
 except Exception as e:
@@ -77,9 +79,11 @@ class Basic(QtWidgets.QMainWindow) :
         self.setWindowState(QtCore.Qt.WindowState.WindowMaximized)
         self.setWindowTitle("任務管理系統")
         self.setWindowIcon(QtGui.QIcon("./icon.ico"))
+        # self.setWindowFlags(QtCore.Qt.WindowType.Window | QtCore.Qt.WindowType.WindowM\mizeButtonHint | QtCore.Qt.WindowType.WindowCloseButtonHint)
 
         self._width = QtWidgets.QApplication.primaryScreen().geometry().width()
         self._height = QtWidgets.QApplication.primaryScreen().geometry().height()
+        # self.setFixedSize(self._width, self._height)
 
         self.top = Top(self)
         self.side = Side(self)
@@ -140,6 +144,7 @@ class Top(QtWidgets.QFrame) :
         global page
         page = "Home"
         self.parent.side.initialize(event)
+        self.parent.add.initialize()
         self.parent.main.home()
 
 class Side(QtWidgets.QScrollArea) :
@@ -487,7 +492,7 @@ class Main(QtWidgets.QScrollArea):
         self.add_task_button.setStyleSheet(f'''background: {COLORS["button_color"]};
                                            color: {COLORS["white"]};''')
         self.add_task_button.setFixedWidth(self.add_task_button.sizeHint().width())
-        self.add_task_button.clicked.connect(lambda: self.parent.add.add_task)
+        self.add_task_button.clicked.connect(lambda: self.parent.add.add_task())
         self.task_layout.addWidget(self.add_task_button, 0, 2)
 
         self.grid = 1
@@ -567,31 +572,196 @@ class Add(QtWidgets.QFrame) :
         # endregion
 
         # region: add task
-        self.add_task_frame = QtWidgets.QFrame()
-        self.add_task_frame.setStyleSheet(f'''background: {COLORS["main_color"]}''')
-        self.add_task_layout = QtWidgets.QGridLayout(self.add_task_frame)
-        self.add_task_title = QtWidgets.QLabel(text = "新增任務")
+        self.add_task_frame = QtWidgets.QFrame(self)
+        self.add_task_frame.setStyleSheet(f'''background: {COLORS["main_color"]};''')
+        self.add_task_layout = QtWidgets.QGridLayout(self)
+        self.add_task_layout.setSpacing(10)
+        self.add_task_frame.setLayout(self.add_task_layout)
+        self.add_task_frame.setGeometry(int(0.25*self._width), int(0.2*self.parent._height), int(0.5*self._width), int(0.6*self._height))
+
+        self.add_task_title = QtWidgets.QLabel(self, text = "新增任務")
         self.add_task_title.setFont(FONTS["h1"])
         self.add_task_title.setStyleSheet(f"color: {COLORS['green']}")
-        self.add_task_title.move(int((self.add_task_frame.width() / 2) - (self.add_task_title.width() / 2)), int((self.add_task_frame.height() / 2) - (self.add_task_title.width() / 2)))
+        self.add_task_title.adjustSize()
+        self.add_task_title.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.add_task_title.move(int(0.5*self.parent._width - 0.5*self.add_task_title.width()), int(0.1*self.parent._height))
         
         self.task_name_line = QtWidgets.QLabel(text = "任務名稱")
         self.task_name_line.setFont(FONTS['h2'])
         self.task_name_line.setStyleSheet(f"color: {COLORS['green']}")
-        self.add_task_layout.addWidget(self.task_name_line, 0, 3)
+        self.add_task_layout.addWidget(self.task_name_line, 0, 0, 1, 3)
 
         self.task_name_input = QtWidgets.QLineEdit()
         self.task_name_input.setFont(FONTS["content"])
         self.task_name_input.setStyleSheet(f'''color: {COLORS["green"]};
                                            background: {COLORS["white"]};
-                                           border-radius: 10;
-                                           border: 1px solid black''')
-        self.add_task_layout.addWidget(self.task_name_input, 1, 0, 0, 3)
+                                           border-radius: 5;
+                                           padding-left: 5px''')
+        self.add_task_layout.addWidget(self.task_name_input, 1, 0, 1, 3)
 
         self.task_belong_project_line = QtWidgets.QLabel(text = "所屬專案")
         self.task_belong_project_line.setFont(FONTS["h2"])
         self.task_belong_project_line.setStyleSheet(f"color: {COLORS['green']}")
-        self.add_task_layout.addWidget(self.task_belong_project_line)
+        self.add_task_layout.addWidget(self.task_belong_project_line, 0, 3, 1, 3)
+
+        self.task_belong_project_input = QtWidgets.QComboBox()
+        self.task_belong_project_input.addItems(['a', 'b', 'c'])
+        self.task_belong_project_input.setFont(FONTS["content"])
+        self.task_belong_project_input.setStyleSheet(f'''QComboBox{{background: {COLORS["white"]};
+                                                     color: {COLORS["green"]};
+                                                     border-radius: 5;
+                                                     padding-left: 5px;}}
+                                                     QComboBox::drop-down{{
+                                                     border-radius: 5;
+                                                     }}''')
+        self.add_task_layout.addWidget(self.task_belong_project_input, 1, 3, 1, 3)
+
+        self.task_end_time_line = QtWidgets.QLabel(text = "截止時間")
+        self.task_end_time_line.setFont(FONTS["h2"])
+        self.task_end_time_line.setStyleSheet(f"color: {COLORS['green']}")
+        self.add_task_layout.addWidget(self.task_end_time_line, 2, 0, 1, 3)
+
+        self.task_end_time_check = QtWidgets.QCheckBox()
+        self.task_end_time_check.setChecked(True)
+        self.task_end_time_check.stateChanged.connect(lambda state: self.handle_check(state, self.task_end_time_date, self.task_end_time_time))
+        self.task_end_time_check.setFont(FONTS["content"])
+        self.task_end_time_check.setStyleSheet(f"color: {COLORS['green']}")
+        self.add_task_layout.addWidget(self.task_end_time_check, 3, 0, 1, 1)
+
+        self.task_end_time_date = QtWidgets.QDateEdit()
+        self.task_end_time_date.setButtonSymbols(QtWidgets.QDateEdit.ButtonSymbols.NoButtons)
+        self.task_end_time_date.setDisplayFormat("yyyy/MM/dd")
+        self.task_end_time_date.setDate(QtCore.QDate.currentDate())
+        self.task_end_time_date.setFont(FONTS["content"])
+        self.task_end_time_date.setStyleSheet(f"color: {COLORS['green']}")
+        self.add_task_layout.addWidget(self.task_end_time_date, 3, 1, 1, 1)
+
+        self.task_end_time_time = QtWidgets.QTimeEdit()
+        self.task_end_time_time.setButtonSymbols(QtWidgets.QTimeEdit.ButtonSymbols.NoButtons)
+        self.task_end_time_time.setDisplayFormat("hh:mm")
+        self.task_end_time_time.setTime(QtCore.QTime(23, 59))
+        self.task_end_time_time.setFont(FONTS["content"])
+        self.task_end_time_time.setStyleSheet(f"color: {COLORS['green']}")
+        self.add_task_layout.addWidget(self.task_end_time_time, 3, 2, 1, 1)
+
+        self.task_expect_time_line = QtWidgets.QLabel(text = "預計完成時間")
+        self.task_expect_time_line.setFont(FONTS["h2"])
+        self.task_expect_time_line.setStyleSheet(f"color: {COLORS['green']}")
+        self.add_task_layout.addWidget(self.task_expect_time_line, 2, 3, 1, 3)
+
+        self.task_expect_time_check1 = QtWidgets.QCheckBox()
+        self.task_expect_time_check1.setChecked(True)
+        self.task_expect_time_check1.stateChanged.connect(lambda state: self.handle_check(state, self.task_expect_time_date1, self.task_expect_time_time1))
+        self.task_expect_time_check1.setFont(FONTS["content"])
+        self.task_expect_time_check1.setStyleSheet(f"color: {COLORS['green']}")
+        self.add_task_layout.addWidget(self.task_expect_time_check1, 3, 3, 1, 1)
+
+        self.task_expect_time_date1 = QtWidgets.QDateEdit()
+        self.task_expect_time_date1.setButtonSymbols(QtWidgets.QDateEdit.ButtonSymbols.NoButtons)
+        self.task_expect_time_date1.setDisplayFormat("yyyy/MM/dd")
+        self.task_expect_time_date1.setDate(QtCore.QDate.currentDate())
+        self.task_expect_time_date1.setFont(FONTS["content"])
+        self.task_expect_time_date1.setStyleSheet(f"color: {COLORS['green']}")
+        self.add_task_layout.addWidget(self.task_expect_time_date1, 3, 4, 1, 1)
+
+        self.task_expect_time_time1 = QtWidgets.QTimeEdit()
+        self.task_expect_time_time1.setButtonSymbols(QtWidgets.QTimeEdit.ButtonSymbols.NoButtons)
+        self.task_expect_time_time1.setDisplayFormat("hh:mm")
+        self.task_expect_time_time1.setTime(QtCore.QTime(23, 59))
+        self.task_expect_time_time1.setFont(FONTS["content"])
+        self.task_expect_time_time1.setStyleSheet(f"color: {COLORS['green']}")
+        self.add_task_layout.addWidget(self.task_expect_time_time1, 3, 5, 1, 1)
+
+        self.task_expect_time_check2 = QtWidgets.QCheckBox()
+        self.task_expect_time_check2.setChecked(False)
+        self.task_expect_time_check2.stateChanged.connect(lambda state: self.handle_check(state, self.task_expect_time_date2, self.task_expect_time_time2))
+        self.task_expect_time_check2.setFont(FONTS["content"])
+        self.task_expect_time_check2.setStyleSheet(f"color: {COLORS['green']}")
+        self.add_task_layout.addWidget(self.task_expect_time_check2, 4, 3, 1, 1)
+
+        self.task_expect_time_date2 = QtWidgets.QDateEdit()
+        self.task_expect_time_date2.setButtonSymbols(QtWidgets.QDateEdit.ButtonSymbols.NoButtons)
+        self.task_expect_time_date2.setDisplayFormat("yyyy/MM/dd")
+        self.task_expect_time_date2.setDate(QtCore.QDate())
+        self.task_expect_time_date2.setEnabled(False)
+        self.task_expect_time_date2.setFont(FONTS["content"])
+        self.task_expect_time_date2.setStyleSheet(f"color: {COLORS['green']}")
+        self.add_task_layout.addWidget(self.task_expect_time_date2, 4, 4, 1, 1)
+
+        self.task_expect_time_time2 = QtWidgets.QTimeEdit()
+        self.task_expect_time_time2.setButtonSymbols(QtWidgets.QTimeEdit.ButtonSymbols.NoButtons)
+        self.task_expect_time_time2.setDisplayFormat("hh:mm")
+        self.task_expect_time_time2.setTime(QtCore.QTime())
+        self.task_expect_time_time2.setEnabled(False)
+        self.task_expect_time_time2.setFont(FONTS["content"])
+        self.task_expect_time_time2.setStyleSheet(f"color: {COLORS['green']}")
+        self.add_task_layout.addWidget(self.task_expect_time_time2, 4, 5, 1, 1)
+
+        self.task_expect_point_line = QtWidgets.QLabel(text = "估點")
+        self.task_expect_point_line.setFont(FONTS["h2"])
+        self.task_expect_point_line.setStyleSheet(f"color: {COLORS['green']}")
+        self.add_task_layout.addWidget(self.task_expect_point_line, 5, 0, 1, 3)
+
+        self.task_expect_point_input = QtWidgets.QLineEdit()
+        self.task_expect_point_input.setFont(FONTS["content"])
+        self.task_expect_point_input.setStyleSheet(f'''color: {COLORS["green"]};
+                                           background: {COLORS["white"]};
+                                           border-radius: 5;
+                                           padding-left: 5px''')
+        self.add_task_layout.addWidget(self.task_expect_point_input, 6, 0, 1, 3)
+
+        self.task_type_line = QtWidgets.QLabel(text = "任務類型")
+        self.task_type_line.setFont(FONTS["h2"])
+        self.task_type_line.setStyleSheet(f"color: {COLORS['green']}")
+        self.add_task_layout.addWidget(self.task_type_line, 5, 3, 1, 3)
+
+        self.task_type_input = QtWidgets.QComboBox()
+        self.task_type_input.addItems(['a', 'b', 'c', ""])
+        self.task_type_input.currentTextChanged.connect(self.handle_other)
+        self.task_type_input.setFont(FONTS["content"])
+        self.task_type_input.setStyleSheet(f'''QComboBox{{background: {COLORS["white"]};
+                                                     color: {COLORS["green"]};
+                                                     border-radius: 5;
+                                                     padding-left: 5px;}}
+                                                     QComboBox::drop-down{{
+                                                     border-radius: 5;
+                                                     }}''')
+        self.add_task_layout.addWidget(self.task_type_input, 6, 3, 1, 3)
+
+        self.task_remark_line = QtWidgets.QLabel(text = "備註")
+        self.task_remark_line.setFont(FONTS["h2"])
+        self.task_remark_line.setStyleSheet(f"color: {COLORS['green']}")
+        self.add_task_layout.addWidget(self.task_remark_line, 7, 0, 1, 3)
+
+        self.task_remark_input = QtWidgets.QTextEdit()
+        self.task_remark_input.setFont(FONTS["content"])
+        self.task_remark_input.setStyleSheet(f'''color: {COLORS["green"]};
+                                           background: {COLORS["white"]};
+                                           border-radius: 5;
+                                           padding-left: 5px''')
+        self.add_task_layout.addWidget(self.task_remark_input, 8, 0, 2, 6)
+
+        self.check_button = QtWidgets.QPushButton(self, text = "確認")
+        self.check_button.clicked.connect(lambda: self.check(type = "task"))
+        self.check_button.setFont(FONTS["h2"])
+        self.check_button.setStyleSheet(f'''color: {COLORS['white']};
+                                        background: {COLORS["button_color"]};
+                                        border-radius: 5px;
+                                        padding: 5 10 5 10''')
+        self.check_button.adjustSize()
+        self.check_button.move(int(0.9*self._width), int(0.5*self._height - 0.5*self.check_button.height()))
+
+        self.add_task_layout.addWidget(self.task_remark_input, 8, 0, 2, 6)
+
+        self.cancel_button = QtWidgets.QPushButton(self, text = "取消")
+        self.cancel_button.clicked.connect(self.initialize)
+        self.cancel_button.setFont(FONTS["h2"])
+        self.cancel_button.setStyleSheet(f'''color: {COLORS['white']};
+                                        background: {COLORS["red_button_color"]};
+                                        border-radius: 5px;
+                                        padding: 5 10 5 10''')
+        self.cancel_button.adjustSize()
+        self.cancel_button.move(int(0.1*self._width), int(0.5*self._height - 0.5*self.cancel_button.height()))
         # endregion
 
         self.hide()
@@ -604,6 +774,34 @@ class Add(QtWidgets.QFrame) :
         self.initialize()
         self.show()
         self.add_task_frame.show()
+
+    def handle_check(self, state, dateedit: QtWidgets.QDateEdit, timeedit: QtWidgets.QTimeEdit) :
+        if not(state == 2) :
+            dateedit.setDate(QtCore.QDate())
+            dateedit.setEnabled(False)
+            timeedit.setTime(QtCore.QTime())
+            timeedit.setEnabled(False)
+        else :
+            dateedit.setDate(QtCore.QDate.currentDate())
+            dateedit.setEnabled(True)
+            timeedit.setTime(QtCore.QTime(23, 59))
+            timeedit.setEnabled(True)
+
+    def handle_other(self) :
+        if self.task_type_input.currentText() == "" :
+            self.task_type_input.setEditable(True)
+        elif not self.task_type_input.lineEdit().hasFocus() :
+            print("out")
+            self.task_type_input.setEditable(False)
+            self.task_type_input.setEnabled(True)
+
+    def check(self, type: str) :
+        if type == "task" :
+            name = self.task_name_input.text()
+            belong_project = self.task_belong_project_input.currentText()
+    
+    def warning(self) :
+        print("warning")
 
 class CircularLoadingWidget(QtWidgets.QWidget):
     def __init__(self):
