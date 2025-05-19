@@ -24,13 +24,12 @@ def change_task(name: str, belong_project: str = None, limit_time: str = None, e
     :param task_remark: It's the task's remark to describe the task more detailed. Option in **add** and **edit** mode.
     :param mode: It's the mode that you want to use in this function. Needed in **every** mode. Option: "add", "edit", "delete"
     '''
-
-    cred = firebase_admin.credentials.Certificate("./serviceAccountKey.json")
-    firebase_admin.initialize_app(cred, {"databaseURL": "https://tasks-manager-a8070-default-rtdb.firebaseio.com/"})
-    ref = db.reference("/Tasks")
+    if not firebase_admin._apps :
+        cred = firebase_admin.credentials.Certificate("./serviceAccountKey.json")
+        firebase_admin.initialize_app(cred, {"databaseURL": "https://tasks-manager-a8070-default-rtdb.firebaseio.com/"})
+    ref = db.reference(f"/Tasks/{belong_project}")
     if mode == "add" :
-        content = {name: {"belong_project": belong_project,
-                        "expect_point": expect_point,
+        content = {name: {"expect_point": expect_point,
                         "done": "False"}}
         if limit_time != None :
             content[name]["limit_time"] = limit_time

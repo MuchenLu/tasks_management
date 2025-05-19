@@ -218,8 +218,18 @@ class Side(QtWidgets.QScrollArea) :
             menu = QtWidgets.QLabel(self, text = project.replace('"', ""))
             menu.setStyleSheet(f"color: {COLORS['white']}")
             menu.setFont(FONTS["menu"])
-            menu.mousePressEvent = lambda event: self.handle_mouseEvent(event, menu)
+            menu.mousePressEvent = lambda event, m = menu: self.handle_mouseEvent(event, m)
             self.main_layout.addWidget(menu)
+
+        self.add_project = QtWidgets.QPushButton(self, text = "新增專案")
+        self.add_project.clicked.connect(self.func_add_project)
+        self.add_project.setFont(FONTS["h2"])
+        self.add_project.setStyleSheet(f'''color: {COLORS["white"]};
+                                       background: {COLORS["button_color"]};
+                                       border-radius: 5px;
+                                       margin-right: 20px;
+                                       padding: 5 0 5 0''')
+        self.main_layout.addWidget(self.add_project)
 
     def initialize(self, event) :
         for i in range(self.main_layout.count()) :
@@ -242,6 +252,9 @@ class Side(QtWidgets.QScrollArea) :
     def handle_mouseEvent(self, event, label) :
         self.initialize(event)
         self.switch_page(event, label)
+
+    def func_add_project(self) :
+        self.parent.add.add_project()
 
 class Main(QtWidgets.QScrollArea):
     def __init__(self, parent):
@@ -530,7 +543,7 @@ class Main(QtWidgets.QScrollArea):
     def task(self) :
         self.initialize()
         self.project_title.setText(page)
-        self.grid = 1
+        self.row = 1
         self.column = 0
         if page == "全部任務" :
             for project in list(tasks.keys()) :
@@ -547,7 +560,7 @@ class Main(QtWidgets.QScrollArea):
                     task_title = QtWidgets.QLabel(f'{project}: {task}')
                     task_title.setFont(FONTS["content"])
                     task_layout.addWidget(task_title, 0, 0)
-                    self.task_layout.addWidget(task_frame, self.grid, self.column)
+                    self.task_layout.addWidget(task_frame, self.row, self.column)
                     if self.column == 2 :
                         self.row += 1
                         self.column = 0
@@ -726,7 +739,17 @@ class Add(QtWidgets.QFrame) :
                                                      QComboBox::drop-down{{
                                                      border-radius: 5;
                                                      }}''')
-        self.add_task_layout.addWidget(self.task_type_input, 6, 3, 1, 3)
+        self.add_task_layout.addWidget(self.task_type_input, 6, 3, 1, 2)
+
+        self.task_type_other_input = QtWidgets.QLineEdit()
+        self.task_type_other_input.setFont(FONTS["content"])
+        self.task_type_other_input.setStyleSheet(f'''background: {COLORS["white"]};
+                                                     color: {COLORS["green"]};
+                                                     border-radius: 5;
+                                                     padding-left: 5px;
+                                                     ''')
+        self.add_task_layout.addWidget(self.task_type_other_input, 6, 5, 1, 1)
+        self.task_type_other_input.setVisible(False)
 
         self.task_remark_line = QtWidgets.QLabel(text = "備註")
         self.task_remark_line.setFont(FONTS["h2"])
@@ -741,39 +764,114 @@ class Add(QtWidgets.QFrame) :
                                            padding-left: 5px''')
         self.add_task_layout.addWidget(self.task_remark_input, 8, 0, 2, 6)
 
-        self.check_button = QtWidgets.QPushButton(self, text = "確認")
-        self.check_button.clicked.connect(lambda: self.check(type = "task"))
-        self.check_button.setFont(FONTS["h2"])
-        self.check_button.setStyleSheet(f'''color: {COLORS['white']};
+        self.check_task_button = QtWidgets.QPushButton(self, text = "確認")
+        self.check_task_button.clicked.connect(lambda: self.check(type = "task"))
+        self.check_task_button.setFont(FONTS["h2"])
+        self.check_task_button.setStyleSheet(f'''color: {COLORS['white']};
                                         background: {COLORS["button_color"]};
                                         border-radius: 5px;
                                         padding: 5 10 5 10''')
-        self.check_button.adjustSize()
-        self.check_button.move(int(0.9*self._width), int(0.5*self._height - 0.5*self.check_button.height()))
+        self.check_task_button.adjustSize()
+        self.check_task_button.move(int(0.9*self._width), int(0.5*self._height - 0.5*self.check_task_button.height()))
 
         self.add_task_layout.addWidget(self.task_remark_input, 8, 0, 2, 6)
 
-        self.cancel_button = QtWidgets.QPushButton(self, text = "取消")
-        self.cancel_button.clicked.connect(self.initialize)
-        self.cancel_button.setFont(FONTS["h2"])
-        self.cancel_button.setStyleSheet(f'''color: {COLORS['white']};
+        self.cancel_task_button = QtWidgets.QPushButton(self, text = "取消")
+        self.cancel_task_button.clicked.connect(self.initialize)
+        self.cancel_task_button.setFont(FONTS["h2"])
+        self.cancel_task_button.setStyleSheet(f'''color: {COLORS['white']};
                                         background: {COLORS["red_button_color"]};
                                         border-radius: 5px;
                                         padding: 5 10 5 10''')
-        self.cancel_button.adjustSize()
-        self.cancel_button.move(int(0.1*self._width), int(0.5*self._height - 0.5*self.cancel_button.height()))
+        self.cancel_task_button.adjustSize()
+        self.cancel_task_button.move(int(0.1*self._width), int(0.5*self._height - 0.5*self.cancel_task_button.height()))
+        # endregion
+
+        # region: add peoject
+        self.add_project_title = QtWidgets.QLabel(self, text = "新增專案")
+        self.add_project_title.setFont(FONTS["h1"])
+        self.add_project_title.setStyleSheet(f"color: {COLORS['green']}")
+        self.add_project_title.adjustSize()
+        self.add_project_title.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.add_project_title.move(int(0.5*self.parent._width - 0.5*self.add_project_title.width()), int(0.1*self.parent._height))
+
+        self.add_project_frame = QtWidgets.QFrame(self)
+        self.add_project_frame.setStyleSheet(f'''background: {COLORS["main_color"]};
+                                             color: {COLORS["green"]}''')
+        self.add_project_layout = QtWidgets.QGridLayout(self)
+        self.add_project_layout.setSpacing(10)
+        self.add_project_frame.setLayout(self.add_project_layout)
+        self.add_project_frame.setGeometry(int(0.25*self._width), int(0.2*self.parent._height), int(0.5*self._width), int(0.6*self._height))
+
+        self.project_name_title = QtWidgets.QLabel(text = "專案名稱")
+        self.project_name_title.setFont(FONTS["h2"])
+        self.project_name_title.setStyleSheet(f'''color: {COLORS["green"]}''')
+        self.add_project_layout.addWidget(self.project_name_title, 0, 0, 1, 2)
+
+        self.project_name_input = QtWidgets.QLineEdit()
+        self.project_name_input.setFont(FONTS["content"])
+        self.project_name_input.setStyleSheet(f'''color: {COLORS["green"]};
+                                              border-radius: 5px;
+                                              padding-left: 5px;''')
+        self.add_project_layout.addWidget(self.project_name_input, 1, 0, 1, 2)
+
+        self.project_end_time_title = QtWidgets.QLabel(text = "截止時間")
+        self.project_end_time_title.setFont(FONTS["h2"])
+        self.project_end_time_title.setStyleSheet(f'''color: {COLORS["green"]}''')
+        self.add_project_layout.addWidget(self.project_end_time_title, 0, 2, 1, 2)
+
+        self.project_end_time_date = QtWidgets.QDateEdit()
+        self.project_end_time_date.setDate(QtCore.QDate.currentDate())
+        self.project_end_time_date.setDisplayFormat("yyyy/MM/dd")
+        self.project_end_time_date.setStyleSheet(f'''color: {COLORS["green"]};
+                                                 border-radius: 5px;
+                                                 padding-left: 5px;''')
+        self.add_project_layout.addWidget(self.project_end_time_date, 1, 2, 1, 1)
+
+        self.project_end_time_time = QtWidgets.QTimeEdit()
+        self.project_end_time_time.setTime(QtCore.QTime(23, 59))
+        self.project_end_time_time.setDisplayFormat("hh:mm")
+        self.project_end_time_time.setStyleSheet(f'''border-radius: 5px;
+                                                 padding-left: 5px;''')
+        self.add_project_layout.addWidget(self.project_end_time_time, 1, 3, 1, 1)
         # endregion
 
         self.hide()
     
     def initialize(self) :
         self.hide()
+        self.add_project_title.hide()
+        self.add_project_frame.hide()
+        self.add_task_title.hide()
+        self.check_task_button.hide()
         self.add_task_frame.hide()
+        self.cancel_task_button.hide()
+        self.task_name_input.setText("")
+        self.task_end_time_check.setChecked(True)
+        self.task_end_time_date.setDate(QtCore.QDate.currentDate())
+        self.task_end_time_time.setTime(QtCore.QTime(23, 59))
+        self.task_expect_time_check1.setChecked(True)
+        self.task_expect_time_date1.setDate(QtCore.QDate.currentDate())
+        self.task_expect_time_time1.setTime(QtCore.QTime(23, 59))
+        self.task_expect_time_check2.setChecked(False)
+        self.task_expect_time_date2.setDate(QtCore.QDate.currentDate())
+        self.task_expect_time_time2.setTime(QtCore.QTime(23, 59))
+        self.task_expect_point_input.setText("")
+        self.task_remark_input.setText("")
 
     def add_task(self) :
         self.initialize()
-        self.show()
         self.add_task_frame.show()
+        self.add_task_title.show()
+        self.check_task_button.show()
+        self.cancel_task_button.show()
+        self.show()
+
+    def add_project(self) :
+        self.initialize()
+        self.show()
+        self.add_project_title.show()
+        self.add_project_frame.show()
 
     def handle_check(self, state, dateedit: QtWidgets.QDateEdit, timeedit: QtWidgets.QTimeEdit) :
         if not(state == 2) :
@@ -789,16 +887,36 @@ class Add(QtWidgets.QFrame) :
 
     def handle_other(self) :
         if self.task_type_input.currentText() == "" :
-            self.task_type_input.setEditable(True)
-        elif not self.task_type_input.lineEdit().hasFocus() :
-            print("out")
-            self.task_type_input.setEditable(False)
-            self.task_type_input.setEnabled(True)
+            self.task_type_other_input.setText("")
+            self.task_type_other_input.setVisible(True)
+        else :
+            self.task_type_other_input.setText("")
+            self.task_type_other_input.setVisible(False)
 
     def check(self, type: str) :
         if type == "task" :
+            # regoin:取得資料
             name = self.task_name_input.text()
             belong_project = self.task_belong_project_input.currentText()
+            limit_time = None
+            if self.task_end_time_check.isChecked() :
+                limit_time = f"{self.task_end_time_date.text()} {self.task_end_time_time.text()}"
+            expect_time1 = None
+            if self.task_expect_time_check1.isChecked() :
+                expect_time1 = f"{self.task_expect_time_date1.text()} {self.task_expect_time_time1.text()}"
+            expect_time2 = None
+            if self.task_expect_time_check2.isChecked() :
+                expect_time2 = f"{self.task_expect_time_date2.text()} {self.task_expect_time_date2.text()}"
+            expect_point = self.task_expect_point_input.text()
+            if self.task_type_input.currentText() != "" :
+                task_type = self.task_type_input.currentText()
+            else :
+                task_type = self.task_type_other_input.text()
+            task_remark = self.task_remark_input.toPlainText()
+            backend.change_task(name, belong_project, limit_time, expect_time1, expect_time2, expect_point, task_type, task_remark, mode = "add")
+            # endregion
+            # 刪除輸入框內容
+            self.initialize()
     
     def warning(self) :
         print("warning")
