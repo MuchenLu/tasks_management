@@ -4,8 +4,9 @@ from typing import Literal, Union
 import threading
 
 def get_data() -> dict :
-    cred = firebase_admin.credentials.Certificate("./serviceAccountKey.json")
-    firebase_admin.initialize_app(cred, {"databaseURL": "https://tasks-manager-a8070-default-rtdb.firebaseio.com/"})
+    if not firebase_admin._apps :
+        cred = firebase_admin.credentials.Certificate("./serviceAccountKey.json")
+        firebase_admin.initialize_app(cred, {"databaseURL": "https://tasks-manager-a8070-default-rtdb.firebaseio.com/"})
     data = db.reference("/").get()
     return data
 
@@ -30,6 +31,7 @@ def change_task(name: str, belong_project: str = None, limit_time: str = None, e
     ref = db.reference(f"/Tasks/{belong_project}")
     if mode == "add" :
         content = {name: {"expect_point": expect_point,
+                          "status": "未開始",
                         "done": "False"}}
         if limit_time != None :
             content[name]["limit_time"] = limit_time
@@ -42,7 +44,29 @@ def change_task(name: str, belong_project: str = None, limit_time: str = None, e
         if task_remark != None :
             content[name]["task_remark"] = task_remark
         try :
-            ref.set(content)
+            ref.update(content)
             return 200
         except :
             raise RuntimeError("Adding task error.")
+
+def change_project(name: str, limit_time: str, project_remark: str, mode: Literal["add", "edit", "delete"] = "add") -> int :
+    if not firebase_admin._apps :
+        cred = firebase_admin.credentials.Certificate("./serviceAccountKey.json")
+        firebase_admin.initialize_app(cred, {"databaseURL": "https://tasks-manager-a8070-default-rtdb.firebaseio.com/"})
+    if mode == "add" or mode == "edit" :
+        ref = db.reference("/Tasks")
+        try :
+            ref.update({name: {"setting": {"limit_time": limit_time, "project_remark": project_remark}}})
+            return 200
+        except :
+            raise RuntimeError("Add Project failed.")
+            
+def update_data(data: dict) -> int :
+    if not firebase_admin._apps :
+        cred = firebase_admin.credentials.Certificate("./serviceAccountKey.json")
+        firebase_admin.initialize_app(cred, {"databaseURL": "https://tasks-manager-a8070-default-rtdb.firebaseio.com/"})
+    ref = db.reference("/")
+    try :
+        ref.set(data)
+    except :
+        raise RuntimeError("Updata failed")
