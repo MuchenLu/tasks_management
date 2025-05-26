@@ -2,6 +2,8 @@ import firebase_admin
 from firebase_admin import db
 from typing import Literal, Union
 import threading
+import datetime
+import copy
 
 def get_data() -> dict :
     if not firebase_admin._apps :
@@ -70,3 +72,49 @@ def update_data(data: dict) -> int :
         ref.set(data)
     except :
         raise RuntimeError("Updata failed")
+    
+def sort_data(old_data: dict) -> dict :
+    tasks = copy.deepcopy(old_data)
+    done_task = []
+    no_done_task = []
+    for project in list(tasks.keys()) :
+        for task in list(tasks[project].keys()) :
+            if task == "setting" :
+                continue
+            if tasks[project][task]["status"] == "已完成" :
+                done_task.append((project, task))
+            else :
+                expect_diff = float("inf")
+                limit_diff = float("inf")
+
+                if tasks[project][task].get("expect_time1") :
+                    if datetime.datetime.strptime(tasks[project][task]["expect_time1"], "%Y/%m/%d %H:%M").date() < datetime.datetime.now().date() :
+                        expect_diff = 1000 + (datetime.datetime.now().date() - datetime.datetime.strptime(tasks[project][task]["expect_time1"], "%Y/%m/%d %H:%M").date()).days
+                    else :
+                        expect_diff = (datetime.datetime.strptime(tasks[project][task]["expect_time1"], "%Y/%m/%d %H:%M").date() - datetime.datetime.now().date()).days
+
+                if tasks[project][task].get("limit_time") :
+                    if datetime.datetime.strptime(tasks[project][task]["limit_time"], "%Y/%m/%d %H:%M").date() < datetime.datetime.now().date() :
+                        limit_diff = 1000 + (datetime.datetime.now().date() - datetime.datetime.strptime(tasks[project][task]["limit_time"], "%Y/%m/%d %H:%M").date()).days
+                    else :
+                        limit_diff = (datetime.datetime.strptime(tasks[project][task]["limit_time"], "%Y/%m/%d %H:%M").date() - datetime.datetime.now().date()).days
+                
+                no_done_task.append((project, task, expect_diff, limit_diff))
+
+    done_task.sort(key = lambda x: (x[1].lower()))
+    no_done_task.sort(key = lambda x: (x[2], x[3], x[1].lower()))
+
+    new_data = {}
+
+    for project in tasks:
+        new_data[project] = {}
+        if "setting" in tasks[project]:
+            new_data[project]["setting"] = copy.deepcopy(tasks[project]["setting"])
+
+    for task in no_done_task :
+        new_data[task[0]][task[1]] = old_data[task[0]][task[1]]
+
+    for task in done_task :
+        new_data[task[0]][task[1]] = old_data[task[0]][task[1]]
+    
+    return new_data

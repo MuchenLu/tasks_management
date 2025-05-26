@@ -57,101 +57,216 @@ SCOPES = ["https://www.googleapis.com/auth/calendar"]
 CREDENTIALS_FILE = "credentials.json"
 TOKEN_FILE = "token.json"
 
-try:
-    credentials = None
-    # 檢查是否已有憑證
-    if os.path.exists(TOKEN_FILE):
-        try:
-            credentials = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
-        except Exception as load_error:
-            print(f"載入憑證失敗: {load_error}")
-            credentials = None
-
-    # 如果憑證無效，重新授權
-    if not credentials or not credentials.valid:
-        try:
-            # 嘗試刷新 Token
-            if credentials and credentials.expired and credentials.refresh_token:
-                credentials.refresh(Request())
-            else:
-                # 重新授權流程
-                flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
-                credentials = flow.run_local_server(
-                    port=0, 
-                    open_browser=True,
-                    prompt='consent'
-                )
-            
-            # 儲存新的憑證
-            with open(TOKEN_FILE, 'w') as token:
-                token.write(credentials.to_json())
-
-        except Exception as auth_error:
-            print(f"授權過程發生錯誤: {auth_error}")
-            raise
-
-    # 強制刷新 Token
-    credentials.refresh(Request())
-    
-    # 建立 Calendar 服務
-    service = build('calendar', 'v3', credentials=credentials)
-
-except Exception as e:
-    print(f"發生錯誤: {e}")
-    service = None
-
 data = backend.get_data()
 quotes = data["Quotes"]
-tasks = data["Tasks"]
+tasks = backend.sort_data(data["Tasks"])
 page = "Home"
 
-# 基本元件
-class Basic(QtWidgets.QMainWindow) :
+class Signals(QtCore.QObject):
+    finished = QtCore.pyqtSignal(object)
+    progress = QtCore.pyqtSignal(int, str)  # 參數：進度百分比, 描述文字
+
+class CircularLoadingWidget(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
-
-        self.setWindowState(QtCore.Qt.WindowState.WindowMaximized)
-        self.setWindowTitle("任務管理系統")
-        self.setWindowIcon(QtGui.QIcon("./icon.ico"))
-        # self.setWindowFlags(QtCore.Qt.WindowType.Window | QtCore.Qt.WindowType.WindowM\mizeButtonHint | QtCore.Qt.WindowType.WindowCloseButtonHint)
-
-        self._width = QtWidgets.QApplication.primaryScreen().geometry().width()
-        self._height = QtWidgets.QApplication.primaryScreen().geometry().height()
-        # self.setFixedSize(self._width, self._height)
-
-        self.top = Top(self)
-        self.side = Side(self)
-        self.add = Add(self)
-        self.main = Main(self)
+        # 設定基本屬性
+        self.setFixedSize(200, 300)
+        self.setWindowTitle("載入中")
         
-        self.circularLoadingWidget = CircularLoadingWidget()
+        # 進度參數
+        self.progress = 0
+        self.progress_text = "準備中..."
+        
+        # 建立垂直佈局
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        
+        # 建立繪圖區域
+        self.drawingArea = QtWidgets.QWidget(self)
+        self.drawingArea.setFixedSize(200, 200)
+        layout.addWidget(self.drawingArea, 0, QtCore.Qt.AlignmentFlag.AlignCenter)
+        
+        # 建立標籤
+        self.label = QtWidgets.QLabel("UI建構中，請稍等...")
+        self.label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.label.setFont(FONTS["content"])
+        layout.addWidget(self.label, 0, QtCore.Qt.AlignmentFlag.AlignCenter)
+        
+        # 進度標籤
+        self.progress_label = QtWidgets.QLabel("0%")
+        self.progress_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.progress_label.setFont(FONTS["content"])
+        layout.addWidget(self.progress_label, 0, QtCore.Qt.AlignmentFlag.AlignCenter)
+        
+        # 設定視窗屬性
+        self.setWindowFlags(QtCore.Qt.WindowType.FramelessWindowHint | QtCore.Qt.WindowType.WindowStaysOnTopHint)
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
+        
+        # 置中顯示
+        self.center_on_screen()
+    
+    def center_on_screen(self):
+        """將視窗置中顯示在螢幕上"""
+        screen = QtWidgets.QApplication.primaryScreen().geometry()
+        size = self.geometry()
+        self.move(
+            (screen.width() - size.width()) // 2,
+            (screen.height() - size.height()) // 2
+        )
 
-        self.circularLoadingWidget.show()
-        self.top.show()
-        self.side.show()
-        self.main.show()
+    def update_progress(self, percent, text):
+        """更新進度資訊"""
+        self.progress = max(0, min(100, percent))  # 確保進度在 0-100 之間
+        self.progress_text = text
+        self.progress_label.setText(f"{self.progress}% - {text}")
+        self.update()  # 重繪視窗
+        
+        # 強制處理事件，確保 UI 更新
+        QtWidgets.QApplication.processEvents()
+        
+    def paintEvent(self, event):
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        
+        # 繪製半透明背景
+        painter.setBrush(QtGui.QColor(240, 240, 240, 200))
+        painter.setPen(QtCore.Qt.PenStyle.NoPen)
+        painter.drawRoundedRect(self.rect(), 10, 10)
+        
+        # 設定畫筆
+        pen = QtGui.QPen()
+        pen.setWidth(12)
+        pen.setCapStyle(QtCore.Qt.PenCapStyle.RoundCap)
+        
+        # 繪製靜態灰色環
+        pen.setColor(QtGui.QColor(200, 200, 200, 150))
+        painter.setPen(pen)
+        painter.drawArc(50, 50, 100, 100, 0, 360 * 16)
+        
+        # 繪製進度環
+        pen.setColor(QtGui.QColor(COLORS["primary_button"]))
+        painter.setPen(pen)
+        # 繪製進度弧，從90度開始（頂部），順時針方向
+        start_angle = 90 * 16  # 起始角度（頂部）
+        span_angle = int(-self.progress * 3.6 * 16)  # 進度對應的角度（負值表示順時針），轉換為整數
+        painter.drawArc(50, 50, 100, 100, start_angle, span_angle)
+        
+        # 繪製進度文字
+        painter.setPen(QtGui.QColor(COLORS["primary_black"]))
+        painter.setFont(FONTS["h1"])
+        painter.drawText(50, 50, 100, 100, QtCore.Qt.AlignmentFlag.AlignCenter, f"{self.progress}%")
 
+    def mousePressEvent(self, event):
+        """允許拖動視窗"""
+        if event.button() == QtCore.Qt.MouseButton.LeftButton:
+            self.dragPos = event.globalPosition().toPoint()
+            
+    def mouseMoveEvent(self, event):
+        """處理視窗拖動"""
+        if hasattr(self, 'dragPos'):
+            newPos = event.globalPosition().toPoint() - self.dragPos
+            self.move(self.x() + newPos.x(), self.y() + newPos.y())
+            self.dragPos = event.globalPosition().toPoint()
+
+# 基本元件
+class Basic(QtWidgets.QMainWindow):
+    def __init__(self):
+        super().__init__()
+        
+        try:
+            self.setWindowState(QtCore.Qt.WindowState.WindowMaximized)
+            self.setWindowTitle("任務管理系統")
+            
+            # 檢查圖示檔案是否存在
+            if os.path.exists("./icon.ico"):
+                self.setWindowIcon(QtGui.QIcon("./icon.ico"))
+            
+            self._width = QtWidgets.QApplication.primaryScreen().geometry().width()
+            self._height = QtWidgets.QApplication.primaryScreen().geometry().height()
+            
+            # 分步驟創建元件，避免一次性載入過多
+            self.top = None
+            self.side = None
+            self.add = None
+            self.main = None
+            
+            # 使用 QTimer 分階段創建元件
+            QtCore.QTimer.singleShot(50, self.create_components_step1)
+            
+        except Exception as e:
+            print(f"Basic 初始化失敗: {e}")
+            raise
+
+    def create_components_step1(self):
+        """第一階段：創建 Top 元件"""
+        try:
+            self.top = Top(self)
+            self.top.hide()
+            QtCore.QTimer.singleShot(50, self.create_components_step2)
+        except Exception as e:
+            print(f"創建 Top 元件失敗: {e}")
+            QtCore.QTimer.singleShot(50, self.create_components_step2)
+
+    def create_components_step2(self):
+        """第二階段：創建 Side 元件"""
+        try:
+            self.side = Side(self)
+            self.side.hide()
+            QtCore.QTimer.singleShot(50, self.create_components_step3)
+        except Exception as e:
+            print(f"創建 Side 元件失敗: {e}")
+            QtCore.QTimer.singleShot(50, self.create_components_step3)
+
+    def create_components_step3(self):
+        """第三階段：創建 Add 元件"""
+        try:
+            self.add = Add(self)
+            self.add.hide()
+            QtCore.QTimer.singleShot(50, self.create_components_step4)
+        except Exception as e:
+            print(f"創建 Add 元件失敗: {e}")
+            QtCore.QTimer.singleShot(50, self.create_components_step4)
+
+    def create_components_step4(self):
+        """第四階段：創建 Main 元件（最耗時）"""
+        try:
+            self.main = Main(self)
+            self.main.hide()
+        except Exception as e:
+            print(f"創建 Main 元件失敗: {e}")
+
+    def show_components(self):
+        """顯示所有主要元件"""
+        if self.top:
+            self.top.show()
+        if self.side:
+            self.side.show()
+        if self.main:
+            self.main.show()
+    
     def resizeEvent(self, event):
         self._width = self.size().width()
         self._height = self.size().height()
-
         super().resizeEvent(event)
-    
-    def showEvent(self, event):
-        super().showEvent(event)
-        if hasattr(self, 'circularLoadingWidget') and self.circularLoadingWidget:
-            self.circularLoadingWidget.close()
     
     def closeEvent(self, event):
         super().closeEvent(event)
-        backend.update_data(data)
+        try:
+            backend.update_data(data)
+        except:
+            pass
 
-    def update(self) :
+    def update(self):
         global data, tasks
-        data = backend.get_data()
-        tasks = data["Tasks"]
-        self.side.project()
-        self.main.task()
+        try:
+            data = backend.get_data()
+            tasks = backend.sort_data(data["Tasks"])
+            if self.side:
+                self.side.project()
+            if self.main:
+                self.main.task()
+        except Exception as e:
+            print(f"更新失敗: {e}")
 
 class Top(QtWidgets.QFrame) :
     def __init__(self, parent):
@@ -467,28 +582,32 @@ class Main(QtWidgets.QScrollArea):
                     task_name.setStyleSheet(f'''color: {COLORS['secondary_black']};''')
                     task_layout.addWidget(task_name)
 
+                    solve = False
                     try :
                         if datetime.datetime.strptime(tasks[project][task]["limit_time"], "%Y/%m/%d %H:%M").date() == datetime.datetime.now().date() :
                             task_status = QtWidgets.QLabel(task_frame, text="今日必須完成")
                             task_status.setStyleSheet(f"color: {COLORS['common_black']}")
                             task_status.setFont(FONTS["remark"])
                             task_layout.addWidget(task_status)
+                            solve = True
                         elif datetime.datetime.strptime(tasks[project][task]["limit_time"], "%Y/%m/%d %H:%M").date() < datetime.datetime.now().date() :
                             task_status = QtWidgets.QLabel(task_frame, text="今日過期任務")
                             task_status.setStyleSheet(f"color: {COLORS['red']}")
                             task_status.setFont(FONTS["remark"])
                             task_layout.addWidget(task_status)
+                            solve = True
                     except KeyError :
                         pass
-
-                    try :
-                        if datetime.datetime.strptime(tasks[project][task]["expect_time1"], "%Y/%m/%d %H:%M").date() == datetime.datetime.now().date() :
-                            task_status = QtWidgets.QLabel(task_frame, text="今日預計完成")
-                            task_status.setStyleSheet(f"color: {COLORS['common_black']}")
-                            task_status.setFont(FONTS["remark"])
-                            task_layout.addWidget(task_status)
-                    except KeyError :
-                        pass
+                    
+                    if not solve :
+                        try :
+                            if datetime.datetime.strptime(tasks[project][task]["expect_time1"], "%Y/%m/%d %H:%M").date() == datetime.datetime.now().date() :
+                                task_status = QtWidgets.QLabel(task_frame, text="今日預計完成")
+                                task_status.setStyleSheet(f"color: {COLORS['common_black']}")
+                                task_status.setFont(FONTS["remark"])
+                                task_layout.addWidget(task_status)
+                        except KeyError :
+                            pass
 
                     task_layout.addSpacing(5)
 
@@ -1247,6 +1366,7 @@ class Add(QtWidgets.QFrame) :
             self.task_type_other_input.setVisible(False)
 
     def check(self, type: str) :
+        global service
         if type == "task" :
             # regoin:取得資料
             name = self.task_name_input.text()
@@ -1259,7 +1379,7 @@ class Add(QtWidgets.QFrame) :
                 expect_time1 = f"{self.task_expect_time_date1.text()} {self.task_expect_time_time1.text()}"
             expect_time2 = None
             if self.task_expect_time_check2.isChecked() :
-                expect_time2 = f"{self.task_expect_time_date2.text()} {self.task_expect_time_date2.text()}"
+                expect_time2 = f"{self.task_expect_time_date2.text()} {self.task_expect_time_time2.text()}"
             expect_point = self.task_expect_point_input.text()
             if self.task_type_input.currentText() != "" :
                 task_type = self.task_type_input.currentText()
@@ -1267,6 +1387,19 @@ class Add(QtWidgets.QFrame) :
                 task_type = self.task_type_other_input.text()
             task_remark = self.task_remark_input.toPlainText()
             status = backend.change_task(name, belong_project, limit_time, expect_time1, expect_time2, expect_point, task_type, task_remark, mode = "add")
+            if expect_time1 :
+                event = {"summary": name}
+                if expect_time1.split(" ")[-1] == "00:00" and expect_time2.split(" ")[-1] == "23:59" :
+                    if expect_time2 :
+                        event["start"] = {"date": expect_time1.split(" ")[0].replace("/", "-"), "timeZone": "Asia/Taipei"}
+                        event["end"] = {"date": expect_time2.split(" ")[0].replace("/", "-"), "timeZone": "Asia/Taipei"}
+                        event["reminders"] = {"useDefault": False, "overrides": [{"method": "popup", "minutes": 0}]}
+                else :
+                    if expect_time2 :
+                        event["start"] = {"dateTime": expect_time1.replace("/", "-").replace(" ", "T") + ":00+08:00", "timeZone": "Asia/Taipei"}
+                        event["end"] = {"dateTime": expect_time2.replace("/", "-").replace(" ", "T") + ":00+08:00", "timeZone": "Asia/Taipei"}
+                        event["reminders"] = {"useDefault": False, "overrides": [{"method": "popup", "minutes": 0}]}
+                service.events().insert(calendarId='fee7be29e65c66988de345605e0fb06c5fe84da49c99c1e07062cfb10825bc6f@group.calendar.google.com', body=event).execute()
             # endregion
             # 刪除輸入框內容
             if status == 200 :
@@ -1285,51 +1418,257 @@ class Add(QtWidgets.QFrame) :
     def warning(self) :
         print("warning")
 
-class CircularLoadingWidget(QtWidgets.QWidget):
-    def __init__(self):
+class InitThread(QtCore.QThread):
+    def __init__(self, signals):
         super().__init__()
-        # 設定基本屬性
-        self.setFixedSize(200, 200)
-        self.angle = 0
-        
-        # 建立計時器
-        self.timer = QtCore.QTimer(self)
-        self.timer.timeout.connect(self.update_loading)
-        self.timer.start(30)  # 每30ms更新一次
-
-        self.show()
+        self.signals = signals
     
-    def paintEvent(self, event):
-        painter = QtGui.QPainter(self)
-        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+    def run(self):
+        global data, tasks, service
         
-        # 建立漸層顏色
-        gradient = QtGui.QLinearGradient(0, 0, 200, 200)
-        gradient.setColorAt(0, QtGui.QColor(50, 150, 255))
-        gradient.setColorAt(1, QtGui.QColor(100, 200, 255))
+        try:
+            # 報告進度：開始初始化
+            self.signals.progress.emit(0, "準備初始化...")
+            self.msleep(200)
+            
+            # 初始化 Google Calendar API
+            self.init_google_calendar()
+            
+            # 載入應用程式資料
+            self.signals.progress.emit(75, "載入應用程式資料...")
+            self.msleep(200)
+            
+            data = backend.get_data()
+            self.signals.progress.emit(80, "處理引用資料...")
+            self.msleep(200)
+            
+            quotes = data["Quotes"]
+            self.signals.progress.emit(85, "處理任務資料...")
+            self.msleep(200)
+            
+            tasks = backend.sort_data(data["Tasks"])
+            self.signals.progress.emit(90, "資料載入完成")
+            self.msleep(200)
+            
+            # 不要在這裡創建UI，改為發送信號讓主執行緒創建
+            self.signals.progress.emit(95, "準備建構使用者介面...")
+            self.msleep(200)
+            
+            # 完成資料初始化
+            self.signals.progress.emit(100, "資料初始化完成")
+            self.msleep(300)
+            
+            # 發送完成信號，但不傳遞window物件
+            self.signals.finished.emit(None)
+            
+        except Exception as e:
+            print(f"初始化過程發生錯誤: {e}")
+            # 即使出錯也要發送完成信號
+            self.signals.finished.emit(None)
+
+    def init_google_calendar(self):
+        """初始化 Google Calendar API"""
+        global service
         
-        # 設定畫筆
-        pen = QtGui.QPen(gradient, 15)
-        pen.setCapStyle(QtCore.Qt.PenCapStyle.RoundCap)
-        painter.setPen(pen)
-        
-        # 繪製環形
-        painter.drawArc(
-            25, 25, 150, 150,  # 調整位置和大小
-            self.angle * 16,   # 起始角度
-            120 * 16           # 弧長
-        )
+        try:
+            self.signals.progress.emit(10, "檢查憑證...")
+            self.msleep(200)
+            
+            credentials = None
+            
+            # 檢查是否已有憑證
+            if os.path.exists(TOKEN_FILE):
+                try:
+                    credentials = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
+                    self.signals.progress.emit(25, "載入憑證成功")
+                    self.msleep(200)
+                except Exception as load_error:
+                    print(f"載入憑證失敗: {load_error}")
+                    credentials = None
+                    self.signals.progress.emit(25, "載入憑證失敗，需要重新授權")
+                    self.msleep(200)
+
+            # 如果憑證無效，重新授權
+            if not credentials or not credentials.valid:
+                self.signals.progress.emit(35, "準備授權...")
+                self.msleep(200)
+                
+                try:
+                    # 嘗試刷新 Token
+                    if credentials and credentials.expired and credentials.refresh_token:
+                        self.signals.progress.emit(45, "刷新 Token...")
+                        self.msleep(200)
+                        credentials.refresh(Request())
+                    else:
+                        # 重新授權流程
+                        self.signals.progress.emit(50, "請在瀏覽器中完成授權...")
+                        self.msleep(500)  # 授權需要更多時間
+                        
+                        flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
+                        credentials = flow.run_local_server(
+                            port=0, 
+                            open_browser=True,
+                            prompt='consent'
+                        )
+                    
+                    # 儲存新的憑證
+                    self.signals.progress.emit(60, "儲存憑證...")
+                    self.msleep(200)
+                    
+                    with open(TOKEN_FILE, 'w') as token:
+                        token.write(credentials.to_json())
+
+                except Exception as auth_error:
+                    print(f"授權過程發生錯誤: {auth_error}")
+                    service = None
+                    self.signals.progress.emit(60, "授權失敗")
+                    self.msleep(200)
+                    return
+
+            # 建立 Calendar 服務
+            if credentials:
+                self.signals.progress.emit(65, "連接 Google 服務...")
+                self.msleep(200)
+                try:
+                    credentials.refresh(Request())
+                    service = build('calendar', 'v3', credentials=credentials)
+                    self.signals.progress.emit(70, "Google Calendar 已就緒")
+                    self.msleep(200)
+                except Exception as service_error:
+                    print(f"建立服務錯誤: {service_error}")
+                    service = None
+                    self.signals.progress.emit(70, "無法連接 Google 服務")
+                    self.msleep(200)
+            else:
+                service = None
+                self.signals.progress.emit(70, "無法連接 Google 服務")
+                self.msleep(200)
+
+        except Exception as e:
+            print(f"Google Calendar 初始化發生錯誤: {e}")
+            service = None
+            self.signals.progress.emit(70, "Google 服務初始化失敗")
+            self.msleep(200)
+
+def main():
+    # 建立信號對象
+    signals = Signals()
     
-    def update_loading(self):
-        self.angle = (self.angle + 5) % 360
-        self.update()
+    # 顯示載入動畫
+    loading = CircularLoadingWidget()
+    loading.show()
+    
+    # 連接信號
+    signals.finished.connect(lambda _: create_main_window(loading))
+    signals.progress.connect(loading.update_progress)
+    
+    # 啟動初始化線程
+    init_thread = InitThread(signals)
+    init_thread.start()
+    
+    # 執行應用程式
+    return app.exec()
 
-def wait() :
-    circularLoadingWidget = CircularLoadingWidget()
-    circularLoadingWidget.show()
+def create_main_window(loading_widget):
+    """在主執行緒中創建主視窗"""
+    try:
+        # 更新進度
+        loading_widget.update_progress(95, "建構使用者介面...")
+        QtWidgets.QApplication.processEvents()
+        
+        # 分階段創建UI元件以顯示詳細進度
+        loading_widget.update_progress(96, "初始化主視窗...")
+        QtWidgets.QApplication.processEvents()
+        
+        # 創建主視窗
+        window = Basic()
+        
+        loading_widget.update_progress(97, "載入字體資源...")
+        QtWidgets.QApplication.processEvents()
+        
+        loading_widget.update_progress(98, "初始化介面元件...")
+        QtWidgets.QApplication.processEvents()
+        
+        loading_widget.update_progress(99, "完成介面建構...")
+        QtWidgets.QApplication.processEvents()
+        
+        loading_widget.update_progress(100, "啟動完成！")
+        QtWidgets.QApplication.processEvents()
+        
+        # 延遲一下讓用戶看到完成狀態
+        QtCore.QTimer.singleShot(500, lambda: finalize_window(window, loading_widget))
+        
+    except Exception as e:
+        print(f"創建主視窗時發生錯誤: {e}")
+        loading_widget.update_progress(100, "啟動完成（部分功能可能受限）")
+        QtWidgets.QApplication.processEvents()
+        
+        # 創建基本視窗
+        try:
+            window = QtWidgets.QMainWindow()
+            window.setWindowTitle("任務管理系統")
+            window.show()
+        except:
+            pass
+        finally:
+            loading_widget.close()
 
-if __name__ == "__main__" :
-    basic = Basic()
-    basic.show()
-    # basic.showMaximized()
-    sys.exit(app.exec())
+def finalize_window(window, loading_widget):
+    """最終化視窗顯示"""
+    try:
+        # 關閉載入動畫
+        loading_widget.close()
+        
+        # 顯示主視窗元件
+        if hasattr(window, 'show_components'):
+            window.show_components()
+        
+        # 顯示主視窗
+        window.show()
+        window.raise_()
+        window.activateWindow()
+        
+    except Exception as e:
+        print(f"最終化視窗時發生錯誤: {e}")
+        if hasattr(window, 'show'):
+            window.show()
+
+
+def complete(window, loading_widget):
+    """完成初始化後的處理"""
+    try:
+        # 延遲一下確保載入動畫完成
+        QtCore.QTimer.singleShot(200, lambda: finalize_window(window, loading_widget))
+    except Exception as e:
+        print(f"完成初始化時發生錯誤: {e}")
+        loading_widget.close()
+        window.show()
+
+def finalize_window(window, loading_widget):
+    """最終化視窗顯示"""
+    # 關閉載入動畫
+    loading_widget.close()
+    
+    # 顯示主視窗元件
+    window.show_components()
+    
+    # 顯示主視窗
+    window.show()
+    window.raise_()
+    window.activateWindow()
+
+def complete(window, loading_widget):
+    # 關閉載入動畫
+    loading_widget.close()
+    
+    # 顯示主視窗
+    window.show()
+
+
+# 移除全域範圍的初始化代碼，改為在函數中執行
+if __name__ == "__main__":
+    # 建立信號對象
+    signals = Signals()
+    
+    # 啟動應用程式
+    sys.exit(main())
