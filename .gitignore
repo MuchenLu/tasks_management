@@ -1,8 +1,3 @@
-__pycache__/
 .venv/
-
-*.json
-
-test.py
-
-Calendar_Profile
+settings/
+log/
