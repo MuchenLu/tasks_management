@@ -6,13 +6,15 @@ from pathlib import Path
 from dotenv import load_dotenv
 from app.utils.log import write
 
+write("開始執行...", "info")
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, PROJECT_ROOT)
 
 load_dotenv(os.path.join(PROJECT_ROOT, "settings", ".env"))
 
 # Google Calendar API 權限設定
-SCOPES = os.getenv("SCOPES", "")
+SCOPES = [f"{os.getenv('SCOPES', '')}"]
 
 # 檔案路徑
 CONFIG_DIR = os.path.join(PROJECT_ROOT, os.getenv("CONFIG_DIR", ""))
@@ -47,5 +49,8 @@ for item in check_list :
     if item == PROJECT_ROOT :
         if item == CALENDAR_TOKEN :
             write(f"{item=}不存在，需請求".split("=")[1], "warning")
+            item = None
         else :
             write(f"{item=}不存在".split("=")[1], "error")
+            item = None
+write("設定完成", "info")

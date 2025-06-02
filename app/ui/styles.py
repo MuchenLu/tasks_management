@@ -7,9 +7,6 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-for path in sys.path :
-    print(path)
-
 from PyQt6 import QtGui, QtWidgets
 from app.utils.config import FONT_FILE
 from app.utils.log import write
