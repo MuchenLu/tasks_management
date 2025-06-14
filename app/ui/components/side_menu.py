@@ -71,6 +71,7 @@ class Side(QtWidgets.QScrollArea) :
                 widget = widget.widget()
                 self.main_layout.removeWidget(widget)
                 widget.deleteLater()
+        self.tasks = self.data_manager.get("tasks")
         # region: menu
         self.graph = QtWidgets.QLabel(self, text = "儀表板")
         self.graph.setStyleSheet(f"color: {COLORS['primary_black']}")

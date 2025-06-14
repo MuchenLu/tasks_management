@@ -2,9 +2,11 @@
 
 import random
 import datetime
+import os
+import time
 from PyQt6 import QtWidgets, QtCore, QtGui, QtWebEngineWidgets, QtWebEngineCore
-from app.services import database
-from app.utils.config import EDIT_PNG, DELETE_PNG, CALENDAR_PROFILE_DIR
+from app.services import database, scraper
+from app.utils.config import EDIT_PNG, DELETE_PNG, CALENDAR_PROFILE_DIR, PROJECT_ROOT
 from app.ui.styles import FONTS, COLORS
 from app.utils.helper import DataManager, PageManager
 
@@ -100,6 +102,47 @@ class Main(QtWidgets.QScrollArea):
         self.greet_frame.setMinimumHeight(int(self._height * 0.3))
         # 修改：將框架添加到主布局
         self.main_layout.addWidget(self.greet_frame)
+        # endregion
+
+        # region: auto add task
+        self.auto_add_frame = QtWidgets.QFrame()  # 修改：移除父元素參數
+        self.auto_add_frame.setObjectName("auto_add_frame")
+        self.auto_add_frame.setStyleSheet(f'''#auto_add_frame {{
+                                       border: none;
+                                       border-bottom: 2px solid {COLORS['line_color']}
+        }}''')
+        self.auto_add_layout = QtWidgets.QVBoxLayout(self.auto_add_frame)
+        self.auto_add_layout.setContentsMargins(0, 20, 0, 20)
+
+        self.auto_add_title = QtWidgets.QLabel(self.auto_add_frame, text="自動添加任務")
+        self.auto_add_title.setStyleSheet(f"color: {COLORS['primary_black']}")
+        self.auto_add_title.setFont(FONTS["h1"])
+        self.auto_add_title.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.auto_add_layout.addWidget(self.auto_add_title)
+
+        self.auto_add_subtitle = QtWidgets.QLabel(self.auto_add_frame, text="自動從ONO和Google Classroom中擷取代辦清單")
+        self.auto_add_subtitle.setFont(FONTS["h2"])
+        self.auto_add_subtitle.setStyleSheet(f'''color: {COLORS['secondary_black']}''')
+        self.auto_add_subtitle.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.auto_add_layout.addWidget(self.auto_add_subtitle)
+
+        self.auto_add_button = QtWidgets.QPushButton(self.auto_add_frame, text="自動添加")
+        self.auto_add_button.setStyleSheet(f'''QPushButton{{
+                                        background: {COLORS['primary_button']};
+                                        color: {COLORS["white"]};
+                                        padding: 10 50 10 50;
+                                        border-radius: 5;}}
+                                        QPushButton:hover{{
+                                        background: {COLORS['primary_button:hover']}
+                                        }}''')
+        self.auto_add_button.setFont(FONTS["content"])
+        self.auto_add_button.clicked.connect(lambda: self.auto_add_task())
+        self.auto_add_layout.addWidget(self.auto_add_button, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
+
+        # 修改：設置最小高度而非使用setGeometry
+        self.auto_add_frame.setMinimumHeight(int(self._height * 0.3))
+        # 修改：將框架添加到主布局
+        self.main_layout.addWidget(self.auto_add_frame)
         # endregion
 
         # region: to-do area
@@ -296,7 +339,15 @@ class Main(QtWidgets.QScrollArea):
             self.profile.setCachePath(CALENDAR_PROFILE_DIR) # 通常快取也放一起
             self.profile.setHttpCacheType(QtWebEngineCore.QWebEngineProfile.HttpCacheType.DiskHttpCache)
         else :
-            self.profile = QtWebEngineCore.QWebEngineProfile(self) # 使用預設 Profile
+            self.profile = QtWebEngineCore.QWebEngineProfile("PersistentCalendarProfile", self)
+            self.profile.setPersistentStoragePath(os.path.join(PROJECT_ROOT, os.getenv("CALENDAR_PROFILE_DIR", "")))
+            self.profile.setPersistentCookiesPolicy(
+                QtWebEngineCore.QWebEngineProfile.PersistentCookiesPolicy.AllowPersistentCookies
+            )
+            self.profile.setCachePath(os.path.join(PROJECT_ROOT, os.getenv("CALENDAR_PROFILE_DIR", "")))
+            self.profile.setHttpCacheType(
+                QtWebEngineCore.QWebEngineProfile.HttpCacheType.DiskHttpCache
+            )
         self.calendar_page = QtWebEngineWidgets.QWebEngineView()
         self.web_page = QtWebEngineCore.QWebEnginePage(self.profile, self)
         self.calendar_page.setPage(self.web_page)
@@ -342,6 +393,7 @@ class Main(QtWidgets.QScrollArea):
 
     def initialize(self) :
         self.greet_frame.hide()
+        self.auto_add_frame.hide()
         self.to_do_frame.hide()
         self.graph_frame.hide()
         self.calendar_frame.hide()
@@ -361,6 +413,7 @@ class Main(QtWidgets.QScrollArea):
     def home(self):
         self.initialize()
         self.greet_frame.show()
+        self.auto_add_frame.show()
         self.to_do_frame.show()
         self.graph_frame.show()
         self.calendar_frame.show()
@@ -376,6 +429,7 @@ class Main(QtWidgets.QScrollArea):
     def task(self) :
         self.initialize()
         self.page = self.page_manager.get()
+        self.tasks = self.data_manager.get("tasks")
         self.project_title.setText(self.page)
         self.row = 1
         self.column = 0
@@ -396,6 +450,7 @@ class Main(QtWidgets.QScrollArea):
                     task_layout = QtWidgets.QGridLayout(task_frame)
 
                     task_title = QtWidgets.QLabel(f'{project}: {task}')
+                    task_title.setWordWrap(True)
                     task_title.setFont(FONTS["content"])
                     task_title.setStyleSheet(f'''color: {COLORS['secondary_black']}''')
                     task_title.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Preferred)
@@ -449,6 +504,7 @@ class Main(QtWidgets.QScrollArea):
                         
                     if self.tasks[project][task].get("task_remark") :
                         task_remark = QtWidgets.QLabel(f'{self.tasks[project][task].get("task_remark")}')
+                        task_remark.setWordWrap(True)
                         task_remark.setFont(FONTS["remark"])
                         task_remark.setStyleSheet(f'''color: {COLORS['common_black']}''')
                         task_layout.addWidget(task_remark, 1, 0, 1, 3)
@@ -475,6 +531,8 @@ class Main(QtWidgets.QScrollArea):
                         self.column = 0
                     else :
                         self.column += 1
+        elif self.page == "Home" :
+            pass
         else :
             for task in list(self.tasks[self.page].keys()) :
                 if task == "setting" :
@@ -491,6 +549,7 @@ class Main(QtWidgets.QScrollArea):
                 task_layout = QtWidgets.QGridLayout(task_frame)
 
                 task_title = QtWidgets.QLabel(f'{task}')
+                task_title.setWordWrap(True)
                 task_title.setFont(FONTS["content"])
                 task_title.setStyleSheet(f'''color: {COLORS['secondary_black']}''')
                 task_title.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Preferred)
@@ -544,11 +603,13 @@ class Main(QtWidgets.QScrollArea):
 
                 if self.tasks[self.page][task].get("task_remark") :
                     task_remark = QtWidgets.QLabel(f'{self.tasks[self.page][task].get("task_remark")}')
+                    task_remark.setWordWrap(True)
                     task_remark.setFont(FONTS["remark"])
                     task_remark.setStyleSheet(f'''color: {COLORS['common_black']}''')
-                    task_layout.addWidget(task_remark, 1, 0, 1, 3)
+                    task_layout.addWidget(task_remark, 3, 0, 1, 3)
 
                 task_status = QtWidgets.QLabel(text = f"{self.tasks[self.page][task]['status']}")
+                task_status.setMaximumHeight(int(0.3*task_frame.height()))
                 task_status.setFont(FONTS["remark"])
                 task_status.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
                 match self.tasks[self.page][task].get("status") :
@@ -562,7 +623,7 @@ class Main(QtWidgets.QScrollArea):
                         task_status.setStyleSheet(f'''color: {COLORS['white']};
                         background: {COLORS['done']}''')
                 task_status.mousePressEvent = lambda event, l = task_status, t = task_title.text().split(" ")[-1], p = self.page: self.change_status(event, label = l, task = t, project = p, now_status = f"{l.text()}")
-                task_layout.addWidget(task_status, 3, 0, 1, 3)
+                task_layout.addWidget(task_status, 4, 0, 1, 3)
 
                 self.task_layout.addWidget(task_frame, self.row, self.column)
                 if self.column == 2 :
@@ -614,3 +675,25 @@ class Main(QtWidgets.QScrollArea):
                     label.setStyleSheet(f'''color: {COLORS['white']};
                         background: {COLORS['doing']}''')
                     self.tasks[project][task]["status"] = "進行中"
+
+    def auto_add_task(self) :
+        tasks_name, tasks_end_time = scraper.get_ono()
+        todos = scraper.get_classroom()
+
+        for task in range(len(tasks_name)) :
+            self.parent.add.add_task()
+            self.parent.add.task_name_input.setText(tasks_name[task])
+            self.parent.add.task_end_time_date.setDate(QtCore.QDate.fromString(tasks_end_time[task].split(" ")[0], "yyyy.MM.dd"))
+            self.parent.add.task_end_time_time.setTime(QtCore.QTime.fromString(tasks_end_time[task].split(" ")[1], "HH:mm"))
+            while not self.parent.add.auto_signal and self.parent :
+                QtCore.QCoreApplication.processEvents()
+                time.sleep(0.01)
+        
+        for todo in todos :
+            self.parent.add.add_task()
+            self.parent.add.task_name_input.setText(todo["title"])
+            self.parent.add.task_end_time_date.setDate(QtCore.QDate(todo["dueDate"]["year"], todo["dueDate"]["month"], todo["dueDate"]["day"]))
+            self.parent.add.task_end_time_time.setTime(QtCore.QTime(todo["dueTime"]["hours"], todo["dueTime"]["minutes"]))
+            while not self.parent.add.auto_signal and self.parent :
+                QtCore.QCoreApplication.processEvents()
+                time.sleep(0.01)

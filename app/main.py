@@ -6,10 +6,8 @@ import sys
 app = QtWidgets.QApplication(sys.argv)
 
 from .services import database, calendar_api
-from .ui.main_window import Basic
-from .ui.components.loading import CircularLoadingWidget
-from .utils.helper import PageManager
 from .utils.log import write
+from .ui.components.loading import CircularLoadingWidget
 
 class Signals(QtCore.QObject):
     finished = QtCore.pyqtSignal(object)
@@ -49,6 +47,9 @@ class InitThread(QtCore.QThread):
             self.msleep(200)
             
             # 不要在這裡創建UI，改為發送信號讓主執行緒創建
+            global Basic
+            from .ui.main_window import Basic
+            from .utils.helper import PageManager
             self.signals.progress.emit(95, "準備建構使用者介面...")
             self.msleep(200)
             

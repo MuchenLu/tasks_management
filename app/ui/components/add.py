@@ -1,9 +1,12 @@
 # app/ui/components/add.py
 
+import time
 from PyQt6 import QtWidgets, QtCore, QtGui
-from app.services import database
+from app.services import database, calendar_api
 from app.ui.styles import COLORS, FONTS
-from app.utils.helper import DataManager
+from app.utils.helper import DataManager, check_task_format
+from app.utils.log import write
+from app.ui.components.expect_point import Form
 
 class Add(QtWidgets.QFrame) :
     def __init__(self, parent):
@@ -17,8 +20,13 @@ class Add(QtWidgets.QFrame) :
         self.setGeometry(self._x, self._y, self._width, self._height)
         self.setStyleSheet(f"background: {COLORS['main_color']}")
 
+        self.expect_point_form = Form(self)
+        self.expect_point_form.hide()
+
         self.data_manager = DataManager()
         self.tasks = self.data_manager.get("tasks")
+
+        self.auto_signal = False
 
         # region: add task
         self.add_task_frame = QtWidgets.QFrame(self)
@@ -151,12 +159,20 @@ class Add(QtWidgets.QFrame) :
         self.task_expect_point_line.setStyleSheet(f"color: {COLORS['secondary_black']}")
         self.add_task_layout.addWidget(self.task_expect_point_line, 5, 0, 1, 3)
 
-        self.task_expect_point_input = QtWidgets.QLineEdit()
+        self.task_expect_point_input = QtWidgets.QPushButton(text="---填寫估點---")
+        self.task_expect_point_input.clicked.connect(self.write_expect_point)
         self.task_expect_point_input.setFont(FONTS["content"])
-        self.task_expect_point_input.setStyleSheet(f'''color: {COLORS['common_black']};
-                                           background: {COLORS["white"]};
-                                           border-radius: 5;
-                                           padding-left: 5px''')
+        self.task_expect_point_input.setStyleSheet(f"""
+                                                    QPushButton {{
+                                                        background-color: #ffffff;
+                                                        color: {COLORS["common_black"]};
+                                                        border-radius: 6px;
+                                                    }}
+
+                                                    QPushButton:hover {{
+                                                        background-color: #f5f7fa;
+                                                        color: #2b2b2b;
+                                                    }}""")
         self.add_task_layout.addWidget(self.task_expect_point_input, 6, 0, 1, 3)
 
         self.task_type_line = QtWidgets.QLabel(text = "任務類型")
@@ -321,8 +337,22 @@ class Add(QtWidgets.QFrame) :
 
         self.hide()
     
+    def mousePressEvent(self, event):
+        """允許拖動視窗"""
+        if event.button() == QtCore.Qt.MouseButton.LeftButton:
+            self.dragPos = event.globalPosition().toPoint()
+            
+    def mouseMoveEvent(self, event):
+        """處理視窗拖動"""
+        if hasattr(self, 'dragPos'):
+            newPos = event.globalPosition().toPoint() - self.dragPos
+            self.move(self.x() + newPos.x(), self.y() + newPos.y())
+            self.dragPos = event.globalPosition().toPoint()
+
     def initialize(self) :
+        self.auto_signal = True
         self.hide()
+        self.expect_point_form.initialize()
         self.add_project_title.hide()
         self.add_project_frame.hide()
         self.add_task_title.hide()
@@ -341,7 +371,7 @@ class Add(QtWidgets.QFrame) :
         self.task_expect_time_check2.setChecked(False)
         self.task_expect_time_date2.setDate(QtCore.QDate.currentDate())
         self.task_expect_time_time2.setTime(QtCore.QTime(23, 59))
-        self.task_expect_point_input.setText("")
+        self.task_expect_point_input.setText("---填寫估點---")
         self.task_remark_input.setText("")
         self.project_name_input.setText("")
         self.project_end_time_date.setDate(QtCore.QDate.currentDate())
@@ -350,6 +380,7 @@ class Add(QtWidgets.QFrame) :
 
     def add_task(self) :
         self.initialize()
+        self.auto_signal = False
         self.add_task_frame.show()
         self.add_task_title.show()
         self.check_task_button.show()
@@ -386,6 +417,13 @@ class Add(QtWidgets.QFrame) :
             self.task_type_other_input.setText("")
             self.task_type_other_input.setVisible(False)
 
+    def write_expect_point(self) :
+        self.expect_point_form.show()
+        while not self.expect_point_form.reload :
+            time.sleep(0.1)
+            QtWidgets.QApplication.processEvents()
+        self.task_expect_point_input.setText(str(self.expect_point_form.point))
+
     def check(self, type: str) :
         global service
         if type == "task" :
@@ -407,24 +445,21 @@ class Add(QtWidgets.QFrame) :
             else :
                 task_type = self.task_type_other_input.text()
             task_remark = self.task_remark_input.toPlainText()
+            try :
+                check_task_format(name, task_type, expect_point, limit_time, expect_time1, expect_time2, task_remark)
+            except Exception as e :
+                write(f"{e}", "warning")
+                QtWidgets.QMessageBox.warning(self.parent, "輸入錯誤", f"{e}", QtWidgets.QMessageBox.StandardButton.Ok)
+                return
             status = database.change_task(name, belong_project, limit_time, expect_time1, expect_time2, expect_point, task_type, task_remark, mode = "add")
-            if expect_time1 :
-                event = {"summary": name}
-                if expect_time1.split(" ")[-1] == "00:00" and expect_time2.split(" ")[-1] == "23:59" :
-                    if expect_time2 :
-                        event["start"] = {"date": expect_time1.split(" ")[0].replace("/", "-"), "timeZone": "Asia/Taipei"}
-                        event["end"] = {"date": expect_time2.split(" ")[0].replace("/", "-"), "timeZone": "Asia/Taipei"}
-                        event["reminders"] = {"useDefault": False, "overrides": [{"method": "popup", "minutes": 0}]}
-                else :
-                    if expect_time2 :
-                        event["start"] = {"dateTime": expect_time1.replace("/", "-").replace(" ", "T") + ":00+08:00", "timeZone": "Asia/Taipei"}
-                        event["end"] = {"dateTime": expect_time2.replace("/", "-").replace(" ", "T") + ":00+08:00", "timeZone": "Asia/Taipei"}
-                        event["reminders"] = {"useDefault": False, "overrides": [{"method": "popup", "minutes": 0}]}
-                service.events().insert(calendarId='fee7be29e65c66988de345605e0fb06c5fe84da49c99c1e07062cfb10825bc6f@group.calendar.google.com', body=event).execute()
+            if expect_time1 and expect_time2 :
+                calendar_api.add_event(name, expect_time1, expect_time2)
             # endregion
             # 刪除輸入框內容
             if status == 200 :
                 self.initialize()
+                self.expect_point_form.initialize()
+                self.auto_signal = True
                 self.parent.update()
         elif type == "project" :
             name = self.project_name_input.text()
@@ -436,5 +471,5 @@ class Add(QtWidgets.QFrame) :
                 self.initialize()
                 self.parent.update()
     
-    def warning(self) :
-        print("warning")
+    def auto_signal_check(self) :
+        return self.auto_signal

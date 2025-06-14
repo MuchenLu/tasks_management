@@ -1,4 +1,9 @@
 .venv/
+
 settings/
+
 log/
+
 data/
+
+**/__pycache__/

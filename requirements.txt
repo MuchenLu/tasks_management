@@ -11,3 +11,5 @@ PyQt6==6.9.0
 PyQt6-WebEngine==6.9.0
 plotly==5.19.0
 dotenv==0.9.9
+selenium==4.33.0
+webdriver_manager==4.0.2

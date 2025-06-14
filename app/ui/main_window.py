@@ -49,12 +49,14 @@ class Basic(QtWidgets.QWidget) :
             pass
 
     def update(self):
-        try:
+        # try:
             self.data = database.get_data()
+            self.data_manager.update(self.data, "data")
             self.tasks = database.sort_data(self.data["Tasks"])
-            if self.side:
+            self.data_manager.update(self.tasks, "tasks")
+            if self.side :
                 self.side.project()
             if self.main:
                 self.main.task()
-        except Exception as e:
-            print(f"更新失敗: {e}")
+        # except Exception as e:
+        #     print(f"更新失敗: {e}")
